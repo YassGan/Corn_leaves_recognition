@@ -1,51 +1,60 @@
 import os
 import cv2
+from sklearn.model_selection import train_test_split
 import numpy as np
-import matplotlib.pyplot as plt
 from skimage.feature import hog
-from skimage import exposure
 
-# Specify the folder containing the images
-folder_path = './data/'
 
-# Get the list of files in the folder
-file_names = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+# Load and preprocess dataset
+def load_images(data_dir):
+    images = []
+    labels = []
+    for label in os.listdir(data_dir):
+        class_dir = os.path.join(data_dir, label)
+        for img_name in os.listdir(class_dir):
+            img_path = os.path.join(class_dir, img_name)
+            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)  # Convert to grayscale
 
-# Print the list of file names
-print("Files in the folder:")
-for file_name in file_names:
-    print(file_name)
+            if img is not None:
+                images.append(img)
+                labels.append(label)
+    return images, labels
 
-# Load the first image from the list (example)
-image_path = os.path.join(folder_path, file_names[0])
-image = cv2.imread(image_path, cv2.IMREAD_COLOR)
+data_dir = './smallData'
+images, labels = load_images(data_dir)
 
-if image is None:
-    raise FileNotFoundError("Image file not found. Please check the path.")
+print(labels)
 
-# Convert the image to grayscale
-image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-# Compute HOG features and HOG image on the grayscale image
-hog_features, hog_image = hog(image_gray, orientations=1, pixels_per_cell=(12, 12),
-                              cells_per_block=(8, 8), block_norm='L1',
-                              visualize=True, transform_sqrt=True)
 
-# Rescale histogram for better display
-hog_image_rescaled = exposure.rescale_intensity(hog_image, in_range=(0, 10))
 
-# Display the original image and HOG visualization
-plt.figure(figsize=(10, 5))
 
-plt.subplot(1, 2, 1)
-plt.title('Original Image')
-plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))  # Convert BGR to RGB for correct display
-plt.axis('off')
+# Split dataset
+X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
+X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
 
-plt.subplot(1, 2, 2)
-plt.title('HOG Visualization (Shape)')
-plt.imshow(hog_image_rescaled, cmap='gray')  # Display HOG image
-plt.axis('off')
+def extract_hog_features(image):
+    features, _ = hog(image, block_norm='L2-Hys', pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
+    return features
 
-plt.tight_layout()
-plt.show()
+def extract_features(images):
+    features = []
+    for img in images:
+        hog_feat = extract_hog_features(img)
+        features.append(hog_feat)
+    return features
+
+X_train_features = extract_features(X_train)
+X_val_features = extract_features(X_val)
+X_test_features = extract_features(X_test)
+
+print("Sample of HOG features extracted from X_train:")
+print(len(X_train_features))  # Print a sample of the extracted HOG features
+
+print("Sample of HOG features extracted from X_val:")
+print(len(X_val_features))  # Print a sample of the extracted HOG features
+
+print("Sample of HOG features extracted from X_test:")
+print(len(X_test_features))  # Print a sample of the extracted HOG features
+
+
