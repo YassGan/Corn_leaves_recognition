@@ -44,17 +44,21 @@ def extract_features(images):
         features.append(hog_feat)
     return features
 
+    
+
 X_train_features = extract_features(X_train)
 X_val_features = extract_features(X_val)
 X_test_features = extract_features(X_test)
 
+
+
+
+
 print("Sample of HOG features extracted from X_train:")
-print(len(X_train_features))  # Print a sample of the extracted HOG features
+print((X_train_features))  # Print a sample of the extracted HOG features
 
 print("Sample of HOG features extracted from X_val:")
-print(len(X_val_features))  # Print a sample of the extracted HOG features
+print((X_val_features))  # Print a sample of the extracted HOG features
 
 print("Sample of HOG features extracted from X_test:")
-print(len(X_test_features))  # Print a sample of the extracted HOG features
-
-
+print((X_test_features))  # Print a sample of the extracted HOG features
