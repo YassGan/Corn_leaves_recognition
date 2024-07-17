@@ -1,10 +1,9 @@
 import os
 import cv2
-from sklearn.model_selection import train_test_split
 import numpy as np
 from skimage.feature import hog, local_binary_pattern
-
-
+from sklearn.model_selection import train_test_split
+import time  # Import the time module
 
 # Load and preprocess dataset
 def load_images(data_dir):
@@ -26,16 +25,13 @@ images, labels = load_images(data_dir)
 
 print(labels)
 
-
-
 # Split dataset
 X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
 X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
 
 def extract_hog_features(image):
-    features, _ = hog(image, orientations=9,pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
+    features, _ = hog(image, orientations=9, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
     return features
-
 
 def extract_lbp_features(image):
     radius = 3
@@ -43,39 +39,47 @@ def extract_lbp_features(image):
     lbp = local_binary_pattern(image, n_points, radius, method='uniform')
     return lbp.flatten()
 
-
-
-
-
-
 def extract_features(images):
     hog_features = []
     lbp_features = []
+
+    # Start timing HOG feature extraction
+    start_hog_time = time.time()
     for img in images:
         hog_feat = extract_hog_features(img)
         hog_features.append(hog_feat)
-        
+    end_hog_time = time.time()
+    hog_time = end_hog_time - start_hog_time
+
+    # Start timing LBP feature extraction
+    start_lbp_time = time.time()
+    for img in images:
         lbp_feat = extract_lbp_features(img)
         lbp_features.append(lbp_feat)
-        
-    return hog_features, lbp_features
-    
+    end_lbp_time = time.time()
+    lbp_time = end_lbp_time - start_lbp_time
 
-
+    return hog_features, lbp_features, hog_time, lbp_time
 
 # Extract features
-X_train_hog_features, X_train_lbp_features = extract_features(X_train)
-X_val_hog_features, X_val_lbp_features = extract_features(X_val)
-X_test_hog_features, X_test_lbp_features = extract_features(X_test)
+X_train_hog_features, X_train_lbp_features, train_hog_time, train_lbp_time = extract_features(X_train)
+X_val_hog_features, X_val_lbp_features, val_hog_time, val_lbp_time = extract_features(X_val)
+X_test_hog_features, X_test_lbp_features, test_hog_time, test_lbp_time = extract_features(X_test)
 
-
-
-print("Sample of X_train_hog_features  extracted from X_train:")
-print((X_train_hog_features))  
-FirstImage_Vector=X_train_hog_features[0]
+print("Sample of X_train_hog_features extracted from X_train:")
+print(X_train_hog_features)  
+FirstImage_Vector = X_train_hog_features[0]
 print(FirstImage_Vector)
 
-print("Sample of X_train_lbp_features  extracted from X_train:")
-print((X_train_lbp_features[0])) 
+print("Sample of X_train_lbp_features extracted from X_train:")
+print(X_train_lbp_features[0]) 
+
+# Print timing information
+print("Time taken for HOG feature extraction on training set:", train_hog_time)
+print("Time taken for LBP feature extraction on training set:", train_lbp_time)
+print("Time taken for HOG feature extraction on validation set:", val_hog_time)
+print("Time taken for LBP feature extraction on validation set:", val_lbp_time)
+print("Time taken for HOG feature extraction on test set:", test_hog_time)
+print("Time taken for LBP feature extraction on test set:", test_lbp_time)
 
 print("The end of the code")
