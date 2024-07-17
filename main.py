@@ -2,7 +2,8 @@ import os
 import cv2
 from sklearn.model_selection import train_test_split
 import numpy as np
-from skimage.feature import hog
+from skimage.feature import hog, local_binary_pattern
+
 
 
 # Load and preprocess dataset
@@ -27,38 +28,54 @@ print(labels)
 
 
 
-
-
 # Split dataset
 X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
 X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
 
 def extract_hog_features(image):
-    features, _ = hog(image, block_norm='L2-Hys', pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
+    features, _ = hog(image, orientations=9,pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
     return features
+
+
+def extract_lbp_features(image):
+    radius = 3
+    n_points = 24
+    lbp = local_binary_pattern(image, n_points, radius, method='uniform')
+    return lbp.flatten()
+
+
+
+
+
 
 def extract_features(images):
-    features = []
+    hog_features = []
+    lbp_features = []
     for img in images:
         hog_feat = extract_hog_features(img)
-        features.append(hog_feat)
-    return features
-
+        hog_features.append(hog_feat)
+        
+        lbp_feat = extract_lbp_features(img)
+        lbp_features.append(lbp_feat)
+        
+    return hog_features, lbp_features
     
 
-X_train_features = extract_features(X_train)
-X_val_features = extract_features(X_val)
-X_test_features = extract_features(X_test)
+
+
+# Extract features
+X_train_hog_features, X_train_lbp_features = extract_features(X_train)
+X_val_hog_features, X_val_lbp_features = extract_features(X_val)
+X_test_hog_features, X_test_lbp_features = extract_features(X_test)
 
 
 
+print("Sample of X_train_hog_features  extracted from X_train:")
+print((X_train_hog_features))  
+FirstImage_Vector=X_train_hog_features[0]
+print(FirstImage_Vector)
 
+print("Sample of X_train_lbp_features  extracted from X_train:")
+print((X_train_lbp_features[0])) 
 
-print("Sample of HOG features extracted from X_train:")
-print((X_train_features))  # Print a sample of the extracted HOG features
-
-print("Sample of HOG features extracted from X_val:")
-print((X_val_features))  # Print a sample of the extracted HOG features
-
-print("Sample of HOG features extracted from X_test:")
-print((X_test_features))  # Print a sample of the extracted HOG features
+print("The end of the code")
