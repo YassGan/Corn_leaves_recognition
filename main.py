@@ -1,24 +1,29 @@
 import os
 import cv2
 import numpy as np
+import pandas as pd
 from skimage.feature import hog
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 import time
 
+
+data_folder_name="./SmallData"
+
+
 # Train and evaluate SVM
-def train_evaluate_svm(X_train, y_train, X_val, y_val):
-    clf = SVC(kernel='linear', random_state=42)  # Linear kernel SVM
+def train_evaluate_svm(X_train, y_train, X_val, y_val, svm_params):
+    clf = SVC(**svm_params)  # Pass parameters to SVC
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     accuracy = accuracy_score(y_val, y_pred)
     return clf, accuracy
 
 # Extract HOG features from images
-def extract_hog_features(image):
-    features, _ = hog(image, orientations=9, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
+def extract_hog_features(image, hog_params):
+    features, _ = hog(image, **hog_params, visualize=True)
     return features
 
 def resize_with_padding(image, target_size):
@@ -40,8 +45,6 @@ def resize_with_padding(image, target_size):
 def load_images(data_dir, image_size=256):
     images = []
     labels = []
-    print("")
-    print("Loading images from", data_dir, "...")
     try:
         for label in os.listdir(data_dir):
             class_dir = os.path.join(data_dir, label)
@@ -56,67 +59,105 @@ def load_images(data_dir, image_size=256):
                     print(f"Warning: Unable to read image {img_path}")
     except Exception as e:
         print(f"Error loading images from {data_dir}: {e}")
-    print(f"Loaded {len(images)} images and {len(labels)} labels.\n")
     return images, labels
 
-data_dir = './Alldata'
-images, labels = load_images(data_dir)
-
-print("Splitting dataset...")
-X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
-print("Dataset split into training, validation, and test sets.\n")
-
-def extract_features(images, part_name):
+def extract_features(images, hog_params):
     hog_features = []
-
-    # Start timing HOG feature extraction
-    print(f"Extracting HOG features for {part_name}...")
     start_hog_time = time.time()
     for img in images:
-        hog_feat = extract_hog_features(img)
+        hog_feat = extract_hog_features(img, hog_params)
         hog_features.append(hog_feat)
     end_hog_time = time.time()
     hog_time = end_hog_time - start_hog_time
-
-    # Convert list to numpy array for consistency
     hog_features = np.array(hog_features)
-    print(f"HOG feature extraction for {part_name} completed.\n")
     return hog_features, hog_time
 
-
-
-def normalize_features(features, part_name):
-    print(f"Normalizing features for {part_name}...")
-    scaler = StandardScaler()
+def normalize_features(features, normalization_method):
+    if normalization_method == 'standard':
+        scaler = StandardScaler()
+    elif normalization_method == 'minmax':
+        scaler = MinMaxScaler()
+    elif normalization_method == 'robust':
+        scaler = RobustScaler()
+    else:
+        raise ValueError("Unsupported normalization method")
+    
     scaled_features = scaler.fit_transform(features)
-    print(f"Feature normalization for {part_name} completed.\n")
-
     return scaled_features
 
+def run_experiment(data_dir, image_sizes, hog_params_list, normalization_methods, split_sizes, svm_params_list):
+    results = []  # List to store results for DataFrame
+    
+    for image_size in image_sizes:
+        images, labels = load_images(data_dir, image_size=image_size)
+        
+        for split_size in split_sizes:
+            X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=split_size, random_state=42)
+            X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+            
+            for hog_params in hog_params_list:
+                print(f"Testing HOG parameters: {hog_params}")
+                X_train_hog_features, train_hog_time = extract_features(X_train, hog_params)
+                X_val_hog_features, val_hog_time = extract_features(X_val, hog_params)
+                X_test_hog_features, test_hog_time = extract_features(X_test, hog_params)
 
-# Extract and normalize features
-X_train_hog_features, train_hog_time = extract_features(X_train, "training")
-X_val_hog_features, val_hog_time = extract_features(X_val, "validation")
-X_test_hog_features, test_hog_time = extract_features(X_test, "test")
+                for normalization_method in normalization_methods:
+                    print(f"Testing normalization method: {normalization_method}")
+                    X_train_hog_features = normalize_features(X_train_hog_features, normalization_method)
+                    X_val_hog_features = normalize_features(X_val_hog_features, normalization_method)
+                    X_test_hog_features = normalize_features(X_test_hog_features, normalization_method)
 
-# Normalize features
-X_train_hog_features = normalize_features(X_train_hog_features, "training")
-X_val_hog_features = normalize_features(X_val_hog_features, "validation")
-X_test_hog_features = normalize_features(X_test_hog_features, "test")
+                    for svm_params in svm_params_list:
+                        print(f"Testing SVM parameters: {svm_params}")
+                        start_time = time.time()
+                        svm_hog_model, hog_accuracy = train_evaluate_svm(X_train_hog_features, y_train, X_val_hog_features, y_val, svm_params)
+                        end_time = time.time()
+                        
+                        test_start_time = time.time()
+                        y_test_pred = svm_hog_model.predict(X_test_hog_features)
+                        test_accuracy = accuracy_score(y_test, y_test_pred)
+                        test_end_time = time.time()
+                        
+                        # Collect results
+                        results.append({
+                            'Image Size': image_size,
+                            'Split Size': split_size,
+                            'HOG Params': str(hog_params),
+                            'Normalization Method': normalization_method,
+                            'SVM Params': str(svm_params),
+                            'Train HOG Time': train_hog_time,
+                            'Validation HOG Time': val_hog_time,
+                            'Test HOG Time': test_hog_time,
+                            'Train Time': end_time - start_time,
+                            'Test Time': test_end_time - test_start_time,
+                            'HOG Accuracy': hog_accuracy,
+                            'Test Accuracy': test_accuracy
+                        })
+                        
+                        print(f'HOG Features SVM Accuracy: {hog_accuracy:.4f}')
+                        print(f'Test Accuracy with HOG Features: {test_accuracy:.4f}')
+                        print("\n")
+    
+    # Save results to CSV file
+    df = pd.DataFrame(results)
+    df.to_csv('./Experiments_Results/HOG_SVM_'+data_folder_name+'_experiment_results.csv', index=False)
+    print("Results have been saved to 'experiment_results.csv'")
 
-print("Training SVM model...")
-# Train and evaluate SVM on HOG features
-svm_hog_model, hog_accuracy = train_evaluate_svm(X_train_hog_features, y_train, X_val_hog_features, y_val)
-print(f'HOG Features SVM Accuracy: {hog_accuracy:.4f}\n')
+# Define parameters
+image_sizes = [128, 256, 512]  # Different image sizes
+hog_params_list = [
+    {'orientations': 9, 'pixels_per_cell': (8, 8), 'cells_per_block': (2, 2)},
+    {'orientations': 8, 'pixels_per_cell': (16, 16), 'cells_per_block': (2, 2)},
+    {'orientations': 9, 'pixels_per_cell': (16, 16), 'cells_per_block': (1, 1)},
+]
+normalization_methods = ['standard', 'minmax', 'robust']  # Different normalization methods
+split_sizes = [0.3, 0.4]  # Different data splitting sizes
+svm_params_list = [
+    {'kernel': 'linear', 'C': 1},
+    {'kernel': 'linear', 'C': 10},
+    {'kernel': 'rbf', 'C': 1, 'gamma': 0.001},
+    {'kernel': 'rbf', 'C': 1, 'gamma': 0.01},
+]
 
-print("Evaluating model on test set...")
-# Optionally, evaluate the model on test set if needed
-y_test_pred = svm_hog_model.predict(X_test_hog_features)
-test_accuracy = accuracy_score(y_test, y_test_pred)
-print(f'Test Accuracy with HOG Features: {test_accuracy:.4f}\n')
-
-# Print timing information
-print("Time taken for HOG feature extraction on training set:", train_hog_time)
-print("Time taken for HOG feature extraction on validation set:", val_hog_time)
-print("Time taken for HOG feature extraction on test set:", test_hog_time)
+# Run the experiment
+run_experiment(data_folder_name, image_sizes, hog_params_list, normalization_methods, split_sizes, svm_params_list)
