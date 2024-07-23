@@ -1,3 +1,4 @@
+
 import os
 import cv2
 import numpy as np
@@ -8,19 +9,49 @@ from skimage.filters import gabor
 import time
 
 
+
+
+
+## This function resizes the input images while preserving their carecteristics
+def resize_with_padding(image, target_size):
+    old_size = image.shape[:2]  # old_size is in (height, width) format
+    ratio = float(target_size) / max(old_size)
+    new_size = tuple([int(x * ratio) for x in old_size])
+    
+    # Resize image
+    resized_image = cv2.resize(image, (new_size[1], new_size[0]))
+    
+    # Create a new image and place the resized image at the center
+    new_image = np.zeros((target_size, target_size), dtype=np.uint8)
+    y_offset = (target_size - new_size[0]) // 2
+    x_offset = (target_size - new_size[1]) // 2
+    new_image[y_offset:y_offset + new_size[0], x_offset:x_offset + new_size[1]] = resized_image
+    
+    return new_image
+
+
+
+
+
+
 # Load and preprocess dataset
-def load_images(data_dir):
+def load_images(data_dir, image_size=256):
     images = []
     labels = []
-    for label in os.listdir(data_dir):
-        class_dir = os.path.join(data_dir, label)
-        for img_name in os.listdir(class_dir):
-            img_path = os.path.join(class_dir, img_name)
-            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)  # Convert to grayscale
-
-            if img is not None:
-                images.append(img)
-                labels.append(label)
+    try:
+        for label in os.listdir(data_dir):
+            class_dir = os.path.join(data_dir, label)
+            for img_name in os.listdir(class_dir):
+                img_path = os.path.join(class_dir, img_name)
+                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)  # Convert to grayscale
+                if img is not None:
+                    img = resize_with_padding(img, image_size)  # Resize and pad to the target size
+                    images.append(img)
+                    labels.append(label)
+                else:
+                    print(f"Warning: Unable to read image {img_path}")
+    except Exception as e:
+        print(f"Error loading images from {data_dir}: {e}")
     return images, labels
 
 data_dir = './smallData'
@@ -36,9 +67,7 @@ def extract_hog_features(image):
     features, _ = hog(image, orientations=9, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
     return features
 
-def extract_lbp_features(image):
-    radius = 3
-    n_points = 24
+def extract_lbp_features(image, radius=3, n_points=24):
     lbp = local_binary_pattern(image, n_points, radius, method='uniform')
     return lbp.flatten()
 
@@ -259,9 +288,33 @@ def extract_features(images):
     end_gabor_time = time.time()
     gabor_time = end_gabor_time - start_gabor_time
 
-
-
     return hog_features, lbp_features, glcm_features, gabor_features, glrlm_features_V, glrlm_features_M, hog_time, lbp_time, glcm_time, gabor_time, glrlm_time_V, glrlm_time_M
+
+
+
+
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+# Choose either MinMaxScaler or StandardScaler
+### This function normalizes the features extracted values after the treatment of extraction 
+
+scaler = MinMaxScaler()  # or StandardScaler()
+
+def normalize_features(features_list):
+    all_features = np.vstack(features_list)
+    scaler = StandardScaler()
+    scaled_features = scaler.fit_transform(all_features)
+    
+    split_idx = 0
+    normalized_features = []
+    for features in features_list:
+        next_idx = split_idx + features.shape[0]
+        normalized_features.append(scaled_features[split_idx:next_idx])
+        split_idx = next_idx
+    return normalized_features
+
+
+
 
 
 
@@ -270,23 +323,73 @@ X_train_hog_features, X_train_lbp_features, X_train_glcm_features, X_train_gabor
 X_val_hog_features, X_val_lbp_features, X_val_glcm_features, X_val_gabor_features, X_val_glrlm_features_V, X_val_glrlm_features_M, val_hog_time, val_lbp_time, val_glcm_time, val_gabor_time, val_glrlm_time_V, val_glrlm_time_M = extract_features(X_val)
 X_test_hog_features, X_test_lbp_features, X_test_glcm_features, X_test_gabor_features, X_test_glrlm_features_V, X_test_glrlm_features_M, test_hog_time, test_lbp_time, test_glcm_time, test_gabor_time, test_glrlm_time_V, test_glrlm_time_M = extract_features(X_test)
 
+
+
+
+
+# Normalized extracted features 
+X_train_hog_features = normalize_features(X_train_hog_features)
+X_train_lbp_features = normalize_features(X_train_lbp_features)
+X_train_glcm_features = normalize_features(X_train_glcm_features)
+X_train_gabor_features = normalize_features(X_train_gabor_features)
+X_train_glrlm_features_V = normalize_features(X_train_glrlm_features_V)
+X_train_glrlm_features_M = normalize_features(X_train_glrlm_features_M)
+
+X_val_hog_features = normalize_features(X_val_hog_features)
+X_val_lbp_features = normalize_features(X_val_lbp_features)
+X_val_glcm_features = normalize_features(X_val_glcm_features)
+X_val_gabor_features = normalize_features(X_val_gabor_features)
+X_val_glrlm_features_V = normalize_features(X_val_glrlm_features_V)
+X_val_glrlm_features_M = normalize_features(X_val_glrlm_features_M)
+
+X_test_hog_features = normalize_features(X_test_hog_features)
+X_test_lbp_features = normalize_features(X_test_lbp_features)
+X_test_glcm_features = normalize_features(X_test_glcm_features)
+X_test_gabor_features = normalize_features(X_test_gabor_features)
+X_test_glrlm_features_V = normalize_features(X_test_glrlm_features_V)
+X_test_glrlm_features_M = normalize_features(X_test_glrlm_features_M)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print("")
 print("Sample of X_train_hog_features extracted from X_train:")
 print(X_train_hog_features[0])
+print("")
+
 
 print("Sample of X_train_lbp_features extracted from X_train:")
 print(X_train_lbp_features[0])
+print("")
 
 print("Sample of X_train_glcm_features extracted from X_train:")
 print(X_train_glcm_features[0])
+print("")
 
 print("Sample of X_train_gabor_features extracted from X_train:")
 print(X_train_gabor_features[0])
+print("")
 
 print("Sample of X_train_glrlm_features_V extracted from X_train:")
 print(X_train_glrlm_features_V[0])
+print("")
 
 print("Sample of X_train_glrlm_features_M extracted from X_train:")
 print(X_train_glrlm_features_M[0])
+print("")
 
 # Print timing information
 print("Time taken for HOG feature extraction on training set:", train_hog_time)
