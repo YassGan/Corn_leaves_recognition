@@ -1,18 +1,26 @@
-
 import os
 import cv2
 import numpy as np
-from skimage.feature import hog, local_binary_pattern, graycomatrix, graycoprops
+from skimage.feature import hog
 from sklearn.model_selection import train_test_split
-from skimage.filters import gabor
-
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import StandardScaler
 import time
 
+# Train and evaluate SVM
+def train_evaluate_svm(X_train, y_train, X_val, y_val):
+    clf = SVC(kernel='linear', random_state=42)  # Linear kernel SVM
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_val)
+    accuracy = accuracy_score(y_val, y_pred)
+    return clf, accuracy
 
+# Extract HOG features from images
+def extract_hog_features(image):
+    features, _ = hog(image, orientations=9, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
+    return features
 
-
-
-## This function resizes the input images while preserving their carecteristics
 def resize_with_padding(image, target_size):
     old_size = image.shape[:2]  # old_size is in (height, width) format
     ratio = float(target_size) / max(old_size)
@@ -29,15 +37,11 @@ def resize_with_padding(image, target_size):
     
     return new_image
 
-
-
-
-
-
-# Load and preprocess dataset
 def load_images(data_dir, image_size=256):
     images = []
     labels = []
+    print("")
+    print("Loading images from", data_dir, "...")
     try:
         for label in os.listdir(data_dir):
             class_dir = os.path.join(data_dir, label)
@@ -52,193 +56,22 @@ def load_images(data_dir, image_size=256):
                     print(f"Warning: Unable to read image {img_path}")
     except Exception as e:
         print(f"Error loading images from {data_dir}: {e}")
+    print(f"Loaded {len(images)} images and {len(labels)} labels.\n")
     return images, labels
 
-data_dir = './smallData'
+data_dir = './Alldata'
 images, labels = load_images(data_dir)
 
-print(labels)
-
-# Split dataset
+print("Splitting dataset...")
 X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
 X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+print("Dataset split into training, validation, and test sets.\n")
 
-def extract_hog_features(image):
-    features, _ = hog(image, orientations=9, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
-    return features
-
-def extract_lbp_features(image, radius=3, n_points=24):
-    lbp = local_binary_pattern(image, n_points, radius, method='uniform')
-    return lbp.flatten()
-
-def extract_glcm_features(image):
-    distances = [1]
-    angles = [0]
-    properties = ['contrast', 'dissimilarity', 'homogeneity', 'energy', 'correlation']
-    
-    glcm = graycomatrix(image, distances=distances, angles=angles, symmetric=True, normed=True)
-    
-    features = []
-    for prop in properties:
-        features.extend(graycoprops(glcm, prop).flatten())
-    return np.array(features)
-
-
-
-
-#This glrlm features are returned as a vector
-def extract_glrlm_features_V(image):
-    max_gray = 256  
-    run_lengths = [0] * max_gray
-    
-    for direction in [0, 1, 2, 3]:  # Horizontal, Vertical, Diagonal, Anti-diagonal
-        if direction == 0:  
-            for row in image:
-                run_lengths.extend(get_run_lengths_V(row, max_gray))
-        elif direction == 1:  
-            for col in image.T:
-                run_lengths.extend(get_run_lengths_V(col, max_gray))
-        elif direction == 2:  
-            for offset in range(-image.shape[0] + 1, image.shape[1]):
-                diag = image.diagonal(offset)
-                run_lengths.extend(get_run_lengths_V(diag, max_gray))
-        elif direction == 3:  
-            for offset in range(-image.shape[0] + 1, image.shape[1]):
-                anti_diag = np.fliplr(image).diagonal(offset)
-                run_lengths.extend(get_run_lengths_V(anti_diag, max_gray))
-    return np.array(run_lengths)
-
-
-#This function works for returning the extracted functions in a vector
-def get_run_lengths_V(line, max_gray):
-    run_lengths = [0] * max_gray
-    length = 1
-    for i in range(1, len(line)):
-        if line[i] == line[i - 1]:
-            length += 1
-        else:
-            run_lengths[line[i - 1]] += length
-            length = 1
-    run_lengths[line[-1]] += length
-    return run_lengths
-
-
-
-def extract_glrlm_features_M(image):
-    max_gray = 256
-    all_run_lengths = []
-
-    for direction in [0, 1, 2, 3]:  # Horizontal, Vertical, Diagonal, Anti-diagonal
-        if direction == 0:
-            for row in image:
-                run_lengths = get_run_lengths_M(row, max_gray)
-                all_run_lengths.append(run_lengths)
-        elif direction == 1:
-            for col in image.T:
-                run_lengths = get_run_lengths_M(col, max_gray)
-                all_run_lengths.append(run_lengths)
-        elif direction == 2:
-            for offset in range(-image.shape[0] + 1, image.shape[1]):
-                diag = image.diagonal(offset)
-                run_lengths = get_run_lengths_M(diag, max_gray)
-                all_run_lengths.append(run_lengths)
-        elif direction == 3:
-            for offset in range(-image.shape[0] + 1, image.shape[1]):
-                anti_diag = np.fliplr(image).diagonal(offset)
-                run_lengths = get_run_lengths_M(anti_diag, max_gray)
-                all_run_lengths.append(run_lengths)
-
-    # Calculate statistical features from run-lengths
-    flat_run_lengths = np.concatenate(all_run_lengths)
-    total_pixels = image.size
-
-    # Short Run Emphasis (SRE)
-    SRE = np.sum((flat_run_lengths / total_pixels) ** 2)
-
-    # Long Run Emphasis (LRE)
-    LRE = np.sum(flat_run_lengths ** 2) / total_pixels
-
-    # Gray Level Non-Uniformity (GLN)
-    GLN = np.sum(np.sum(np.array(all_run_lengths), axis=0) ** 2) / (total_pixels ** 2)
-
-    # Run Length Non-Uniformity (RLN)
-    RLN = np.sum(np.sum(np.array(all_run_lengths), axis=1) ** 2) / (total_pixels ** 2)
-
-    # Run Percentage (RP)
-    RP = np.sum(flat_run_lengths) / total_pixels
-
-    # Return as numpy array
-    return np.array([SRE, LRE, GLN, RLN, RP])
-
-
-
-
-def get_run_lengths_M(line, max_gray):
-    run_lengths = [0] * max_gray
-    length = 1
-    for i in range(1, len(line)):
-        if line[i] == line[i - 1]:
-            length += 1
-        else:
-            run_lengths[line[i - 1]] += length
-            length = 1
-    run_lengths[line[-1]] += length
-    return run_lengths
-
-
-
-
-
-
-
-
-
-
-##The gabor simple approach
-# def extract_gabor_features(image):
-#     frequencies = [0.1, 0.3, 0.5, 0.7, 0.9]
-#     features = []
-#     for frequency in frequencies:
-#         filt_real, filt_imag = gabor(image, frequency=frequency)
-#         features.append(filt_real.mean())
-#         features.append(filt_real.var())
-#         features.append(filt_imag.mean())
-#         features.append(filt_imag.var())
-#     return np.array(features)
-
-
-def extract_gabor_features(image):
-    frequencies = [0.1, 0.3, 0.5, 0.7, 0.9]
-    thetas = [0, np.pi/4, np.pi/2, 3*np.pi/4]  # orientations
-    bandwidth = 1
-    sigma_x = 4
-    sigma_y = 4
-    n_stds = 3
-    offset = 0
-    features = []
-    for frequency in frequencies:
-        for theta in thetas:
-            filt_real, filt_imag = gabor(image, frequency=frequency, theta=theta, bandwidth=bandwidth, sigma_x=sigma_x, sigma_y=sigma_y, n_stds=n_stds, offset=offset)
-            features.append(filt_real.mean())
-            features.append(filt_real.var())
-            features.append(filt_imag.mean())
-            features.append(filt_imag.var())
-    return np.array(features)
-
-
-
-
-
-def extract_features(images):
+def extract_features(images, part_name):
     hog_features = []
-    lbp_features = []
-    glcm_features = []
-    glrlm_features_V = []
-    glrlm_features_M = []
-    gabor_features = []
-
 
     # Start timing HOG feature extraction
+    print(f"Extracting HOG features for {part_name}...")
     start_hog_time = time.time()
     for img in images:
         hog_feat = extract_hog_features(img)
@@ -246,171 +79,44 @@ def extract_features(images):
     end_hog_time = time.time()
     hog_time = end_hog_time - start_hog_time
 
-    # Start timing LBP feature extraction
-    start_lbp_time = time.time()
-    for img in images:
-        lbp_feat = extract_lbp_features(img)
-        lbp_features.append(lbp_feat)
-    end_lbp_time = time.time()
-    lbp_time = end_lbp_time - start_lbp_time
-
-    # Start timing GLCM feature extraction
-    start_glcm_time = time.time()
-    for img in images:
-        glcm_feat = extract_glcm_features(img)
-        glcm_features.append(glcm_feat)
-    end_glcm_time = time.time()
-    glcm_time = end_glcm_time - start_glcm_time
-
-    # Start timing GLRLM feature extraction (Vector)
-    start_glrlm_time_V = time.time()
-    for img in images:
-        glrlm_feat_V = extract_glrlm_features_V(img)
-        glrlm_features_V.append(glrlm_feat_V)
-    end_glrlm_time_V = time.time()
-    glrlm_time_V = end_glrlm_time_V - start_glrlm_time_V
-
-    # Start timing GLRLM feature extraction (Matrix)
-    start_glrlm_time_M = time.time()
-    for img in images:
-        glrlm_feat_M = extract_glrlm_features_M(img)
-        glrlm_features_M.append(glrlm_feat_M)
-    end_glrlm_time_M = time.time()
-    glrlm_time_M = end_glrlm_time_M - start_glrlm_time_M
+    # Convert list to numpy array for consistency
+    hog_features = np.array(hog_features)
+    print(f"HOG feature extraction for {part_name} completed.\n")
+    return hog_features, hog_time
 
 
 
-    # Start timing Gabor feature extraction
-    start_gabor_time = time.time()
-    for img in images:
-        gabor_feat = extract_gabor_features(img)
-        gabor_features.append(gabor_feat)
-    end_gabor_time = time.time()
-    gabor_time = end_gabor_time - start_gabor_time
-
-    return hog_features, lbp_features, glcm_features, gabor_features, glrlm_features_V, glrlm_features_M, hog_time, lbp_time, glcm_time, gabor_time, glrlm_time_V, glrlm_time_M
-
-
-
-
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-
-# Choose either MinMaxScaler or StandardScaler
-### This function normalizes the features extracted values after the treatment of extraction 
-
-scaler = MinMaxScaler()  # or StandardScaler()
-
-def normalize_features(features_list):
-    all_features = np.vstack(features_list)
+def normalize_features(features, part_name):
+    print(f"Normalizing features for {part_name}...")
     scaler = StandardScaler()
-    scaled_features = scaler.fit_transform(all_features)
-    
-    split_idx = 0
-    normalized_features = []
-    for features in features_list:
-        next_idx = split_idx + features.shape[0]
-        normalized_features.append(scaled_features[split_idx:next_idx])
-        split_idx = next_idx
-    return normalized_features
+    scaled_features = scaler.fit_transform(features)
+    print(f"Feature normalization for {part_name} completed.\n")
+
+    return scaled_features
 
 
+# Extract and normalize features
+X_train_hog_features, train_hog_time = extract_features(X_train, "training")
+X_val_hog_features, val_hog_time = extract_features(X_val, "validation")
+X_test_hog_features, test_hog_time = extract_features(X_test, "test")
 
+# Normalize features
+X_train_hog_features = normalize_features(X_train_hog_features, "training")
+X_val_hog_features = normalize_features(X_val_hog_features, "validation")
+X_test_hog_features = normalize_features(X_test_hog_features, "test")
 
+print("Training SVM model...")
+# Train and evaluate SVM on HOG features
+svm_hog_model, hog_accuracy = train_evaluate_svm(X_train_hog_features, y_train, X_val_hog_features, y_val)
+print(f'HOG Features SVM Accuracy: {hog_accuracy:.4f}\n')
 
-
-# Extract features
-X_train_hog_features, X_train_lbp_features, X_train_glcm_features, X_train_gabor_features, X_train_glrlm_features_V, X_train_glrlm_features_M, train_hog_time, train_lbp_time, train_glcm_time, train_gabor_time, train_glrlm_time_V, train_glrlm_time_M = extract_features(X_train)
-X_val_hog_features, X_val_lbp_features, X_val_glcm_features, X_val_gabor_features, X_val_glrlm_features_V, X_val_glrlm_features_M, val_hog_time, val_lbp_time, val_glcm_time, val_gabor_time, val_glrlm_time_V, val_glrlm_time_M = extract_features(X_val)
-X_test_hog_features, X_test_lbp_features, X_test_glcm_features, X_test_gabor_features, X_test_glrlm_features_V, X_test_glrlm_features_M, test_hog_time, test_lbp_time, test_glcm_time, test_gabor_time, test_glrlm_time_V, test_glrlm_time_M = extract_features(X_test)
-
-
-
-
-
-# Normalized extracted features 
-X_train_hog_features = normalize_features(X_train_hog_features)
-X_train_lbp_features = normalize_features(X_train_lbp_features)
-X_train_glcm_features = normalize_features(X_train_glcm_features)
-X_train_gabor_features = normalize_features(X_train_gabor_features)
-X_train_glrlm_features_V = normalize_features(X_train_glrlm_features_V)
-X_train_glrlm_features_M = normalize_features(X_train_glrlm_features_M)
-
-X_val_hog_features = normalize_features(X_val_hog_features)
-X_val_lbp_features = normalize_features(X_val_lbp_features)
-X_val_glcm_features = normalize_features(X_val_glcm_features)
-X_val_gabor_features = normalize_features(X_val_gabor_features)
-X_val_glrlm_features_V = normalize_features(X_val_glrlm_features_V)
-X_val_glrlm_features_M = normalize_features(X_val_glrlm_features_M)
-
-X_test_hog_features = normalize_features(X_test_hog_features)
-X_test_lbp_features = normalize_features(X_test_lbp_features)
-X_test_glcm_features = normalize_features(X_test_glcm_features)
-X_test_gabor_features = normalize_features(X_test_gabor_features)
-X_test_glrlm_features_V = normalize_features(X_test_glrlm_features_V)
-X_test_glrlm_features_M = normalize_features(X_test_glrlm_features_M)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-print("")
-print("Sample of X_train_hog_features extracted from X_train:")
-print(X_train_hog_features[0])
-print("")
-
-
-print("Sample of X_train_lbp_features extracted from X_train:")
-print(X_train_lbp_features[0])
-print("")
-
-print("Sample of X_train_glcm_features extracted from X_train:")
-print(X_train_glcm_features[0])
-print("")
-
-print("Sample of X_train_gabor_features extracted from X_train:")
-print(X_train_gabor_features[0])
-print("")
-
-print("Sample of X_train_glrlm_features_V extracted from X_train:")
-print(X_train_glrlm_features_V[0])
-print("")
-
-print("Sample of X_train_glrlm_features_M extracted from X_train:")
-print(X_train_glrlm_features_M[0])
-print("")
+print("Evaluating model on test set...")
+# Optionally, evaluate the model on test set if needed
+y_test_pred = svm_hog_model.predict(X_test_hog_features)
+test_accuracy = accuracy_score(y_test, y_test_pred)
+print(f'Test Accuracy with HOG Features: {test_accuracy:.4f}\n')
 
 # Print timing information
 print("Time taken for HOG feature extraction on training set:", train_hog_time)
-print("Time taken for LBP feature extraction on training set:", train_lbp_time)
-print("Time taken for GLCM feature extraction on training set:", train_glcm_time)
-print("Time taken for Gabor feature extraction on training set:", train_gabor_time)
-print("Time taken for GLRLM feature extraction (Vector) on training set:", train_glrlm_time_V)
-print("Time taken for GLRLM feature extraction (Matrix) on training set:", train_glrlm_time_M)
-print(" ")
-
 print("Time taken for HOG feature extraction on validation set:", val_hog_time)
-print("Time taken for LBP feature extraction on validation set:", val_lbp_time)
-print("Time taken for GLCM feature extraction on validation set:", val_glcm_time)
-print("Time taken for Gabor feature extraction on validation set:", val_gabor_time)
-print("Time taken for GLRLM feature extraction (Vector) on validation set:", val_glrlm_time_V)
-print("Time taken for GLRLM feature extraction (Matrix) on validation set:", val_glrlm_time_M)
-print(" ")
-
 print("Time taken for HOG feature extraction on test set:", test_hog_time)
-print("Time taken for LBP feature extraction on test set:", test_lbp_time)
-print("Time taken for GLCM feature extraction on test set:", test_glcm_time)
-print("Time taken for Gabor feature extraction on test set:", test_gabor_time)
-print("Time taken for GLRLM feature extraction (Vector) on test set:", test_glrlm_time_V)
-print("Time taken for GLRLM feature extraction (Matrix) on test set:", test_glrlm_time_M)
