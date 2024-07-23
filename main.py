@@ -9,9 +9,12 @@ from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 import time
 
+data_folder_name = "./SmallData"
+output_directory = 'Experiments_Results'
 
-data_folder_name="./SmallData"
-
+# Ensure the directory exists
+if not os.path.exists(output_directory):
+    os.makedirs(output_directory)
 
 # Train and evaluate SVM
 def train_evaluate_svm(X_train, y_train, X_val, y_val, svm_params):
@@ -137,11 +140,10 @@ def run_experiment(data_dir, image_sizes, hog_params_list, normalization_methods
                         print(f'HOG Features SVM Accuracy: {hog_accuracy:.4f}')
                         print(f'Test Accuracy with HOG Features: {test_accuracy:.4f}')
                         print("\n")
-    
     # Save results to CSV file
     df = pd.DataFrame(results)
-    df.to_csv('./Experiments_Results/HOG_SVM_'+data_folder_name+'_experiment_results.csv', index=False)
-    print("Results have been saved to 'experiment_results.csv'")
+    output_file = os.path.join(output_directory, f'HOG_SVM_{os.path.basename(data_folder_name)}_experiment_results.csv')
+    df.to_csv(output_file, index=False)
 
 # Define parameters
 image_sizes = [128, 256, 512]  # Different image sizes
