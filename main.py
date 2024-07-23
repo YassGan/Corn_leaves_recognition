@@ -3,7 +3,10 @@ import cv2
 import numpy as np
 from skimage.feature import hog, local_binary_pattern, graycomatrix, graycoprops
 from sklearn.model_selection import train_test_split
+from skimage.filters import gabor
+
 import time
+
 
 # Load and preprocess dataset
 def load_images(data_dir):
@@ -49,11 +52,7 @@ def extract_glcm_features(image):
     features = []
     for prop in properties:
         features.extend(graycoprops(glcm, prop).flatten())
-    
     return np.array(features)
-
-
-
 
 
 
@@ -78,7 +77,6 @@ def extract_glrlm_features_V(image):
             for offset in range(-image.shape[0] + 1, image.shape[1]):
                 anti_diag = np.fliplr(image).diagonal(offset)
                 run_lengths.extend(get_run_lengths_V(anti_diag, max_gray))
-    
     return np.array(run_lengths)
 
 
@@ -96,14 +94,6 @@ def get_run_lengths_V(line, max_gray):
     return run_lengths
 
 
-
-
-
-
-
-
-
-import numpy as np
 
 def extract_glrlm_features_M(image):
     max_gray = 256
@@ -154,10 +144,6 @@ def extract_glrlm_features_M(image):
 
 
 
-
-
-
-
 def get_run_lengths_M(line, max_gray):
     run_lengths = [0] * max_gray
     length = 1
@@ -179,9 +165,36 @@ def get_run_lengths_M(line, max_gray):
 
 
 
+##The gabor simple approach
+# def extract_gabor_features(image):
+#     frequencies = [0.1, 0.3, 0.5, 0.7, 0.9]
+#     features = []
+#     for frequency in frequencies:
+#         filt_real, filt_imag = gabor(image, frequency=frequency)
+#         features.append(filt_real.mean())
+#         features.append(filt_real.var())
+#         features.append(filt_imag.mean())
+#         features.append(filt_imag.var())
+#     return np.array(features)
 
 
-
+def extract_gabor_features(image):
+    frequencies = [0.1, 0.3, 0.5, 0.7, 0.9]
+    thetas = [0, np.pi/4, np.pi/2, 3*np.pi/4]  # orientations
+    bandwidth = 1
+    sigma_x = 4
+    sigma_y = 4
+    n_stds = 3
+    offset = 0
+    features = []
+    for frequency in frequencies:
+        for theta in thetas:
+            filt_real, filt_imag = gabor(image, frequency=frequency, theta=theta, bandwidth=bandwidth, sigma_x=sigma_x, sigma_y=sigma_y, n_stds=n_stds, offset=offset)
+            features.append(filt_real.mean())
+            features.append(filt_real.var())
+            features.append(filt_imag.mean())
+            features.append(filt_imag.var())
+    return np.array(features)
 
 
 
@@ -193,6 +206,8 @@ def extract_features(images):
     glcm_features = []
     glrlm_features_V = []
     glrlm_features_M = []
+    gabor_features = []
+
 
     # Start timing HOG feature extraction
     start_hog_time = time.time()
@@ -234,12 +249,26 @@ def extract_features(images):
     end_glrlm_time_M = time.time()
     glrlm_time_M = end_glrlm_time_M - start_glrlm_time_M
 
-    return hog_features, lbp_features, glcm_features, glrlm_features_V, glrlm_features_M, hog_time, lbp_time, glcm_time, glrlm_time_V, glrlm_time_M
+
+
+    # Start timing Gabor feature extraction
+    start_gabor_time = time.time()
+    for img in images:
+        gabor_feat = extract_gabor_features(img)
+        gabor_features.append(gabor_feat)
+    end_gabor_time = time.time()
+    gabor_time = end_gabor_time - start_gabor_time
+
+
+
+    return hog_features, lbp_features, glcm_features, gabor_features, glrlm_features_V, glrlm_features_M, hog_time, lbp_time, glcm_time, gabor_time, glrlm_time_V, glrlm_time_M
+
+
 
 # Extract features
-X_train_hog_features, X_train_lbp_features, X_train_glcm_features, X_train_glrlm_features_V, X_train_glrlm_features_M, train_hog_time, train_lbp_time, train_glcm_time, train_glrlm_time_V, train_glrlm_time_M = extract_features(X_train)
-X_val_hog_features, X_val_lbp_features, X_val_glcm_features, X_val_glrlm_features_V, X_val_glrlm_features_M, val_hog_time, val_lbp_time, val_glcm_time, val_glrlm_time_V, val_glrlm_time_M = extract_features(X_val)
-X_test_hog_features, X_test_lbp_features, X_test_glcm_features, X_test_glrlm_features_V, X_test_glrlm_features_M, test_hog_time, test_lbp_time, test_glcm_time, test_glrlm_time_V, test_glrlm_time_M = extract_features(X_test)
+X_train_hog_features, X_train_lbp_features, X_train_glcm_features, X_train_gabor_features, X_train_glrlm_features_V, X_train_glrlm_features_M, train_hog_time, train_lbp_time, train_glcm_time, train_gabor_time, train_glrlm_time_V, train_glrlm_time_M = extract_features(X_train)
+X_val_hog_features, X_val_lbp_features, X_val_glcm_features, X_val_gabor_features, X_val_glrlm_features_V, X_val_glrlm_features_M, val_hog_time, val_lbp_time, val_glcm_time, val_gabor_time, val_glrlm_time_V, val_glrlm_time_M = extract_features(X_val)
+X_test_hog_features, X_test_lbp_features, X_test_glcm_features, X_test_gabor_features, X_test_glrlm_features_V, X_test_glrlm_features_M, test_hog_time, test_lbp_time, test_glcm_time, test_gabor_time, test_glrlm_time_V, test_glrlm_time_M = extract_features(X_test)
 
 print("Sample of X_train_hog_features extracted from X_train:")
 print(X_train_hog_features[0])
@@ -249,6 +278,9 @@ print(X_train_lbp_features[0])
 
 print("Sample of X_train_glcm_features extracted from X_train:")
 print(X_train_glcm_features[0])
+
+print("Sample of X_train_gabor_features extracted from X_train:")
+print(X_train_gabor_features[0])
 
 print("Sample of X_train_glrlm_features_V extracted from X_train:")
 print(X_train_glrlm_features_V[0])
@@ -260,17 +292,22 @@ print(X_train_glrlm_features_M[0])
 print("Time taken for HOG feature extraction on training set:", train_hog_time)
 print("Time taken for LBP feature extraction on training set:", train_lbp_time)
 print("Time taken for GLCM feature extraction on training set:", train_glcm_time)
+print("Time taken for Gabor feature extraction on training set:", train_gabor_time)
 print("Time taken for GLRLM feature extraction (Vector) on training set:", train_glrlm_time_V)
 print("Time taken for GLRLM feature extraction (Matrix) on training set:", train_glrlm_time_M)
+print(" ")
 
 print("Time taken for HOG feature extraction on validation set:", val_hog_time)
 print("Time taken for LBP feature extraction on validation set:", val_lbp_time)
 print("Time taken for GLCM feature extraction on validation set:", val_glcm_time)
+print("Time taken for Gabor feature extraction on validation set:", val_gabor_time)
 print("Time taken for GLRLM feature extraction (Vector) on validation set:", val_glrlm_time_V)
 print("Time taken for GLRLM feature extraction (Matrix) on validation set:", val_glrlm_time_M)
+print(" ")
 
 print("Time taken for HOG feature extraction on test set:", test_hog_time)
 print("Time taken for LBP feature extraction on test set:", test_lbp_time)
 print("Time taken for GLCM feature extraction on test set:", test_glcm_time)
+print("Time taken for Gabor feature extraction on test set:", test_gabor_time)
 print("Time taken for GLRLM feature extraction (Vector) on test set:", test_glrlm_time_V)
 print("Time taken for GLRLM feature extraction (Matrix) on test set:", test_glrlm_time_M)
