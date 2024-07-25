@@ -9,7 +9,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 import time
 
-data_folder_name = "./SmallData"
+data_folder_name = "./AllData"
 output_directory = 'Experiments_Results'
 
 # Ensure the directory exists
