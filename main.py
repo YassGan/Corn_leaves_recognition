@@ -10,7 +10,7 @@ import time
 
 # Train and evaluate SVM
 def train_evaluate_svm(X_train, y_train, X_val, y_val):
-    clf = SVC(kernel='linear', random_state=42)  # Linear kernel SVM
+    clf = SVC(kernel='rbf',C=1,gamma=0.0001, random_state=42) 
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     accuracy = accuracy_score(y_val, y_pred)
@@ -18,7 +18,7 @@ def train_evaluate_svm(X_train, y_train, X_val, y_val):
 
 # Extract HOG features from images
 def extract_hog_features(image):
-    features, _ = hog(image, orientations=9, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
+    features, _ = hog(image, orientations=8, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
     return features
 
 def resize_with_padding(image, target_size):
@@ -63,7 +63,7 @@ data_dir = './Alldata'
 images, labels = load_images(data_dir)
 
 print("Splitting dataset...")
-X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
+X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.4, random_state=42)
 X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
 print("Dataset split into training, validation, and test sets.\n")
 
@@ -111,7 +111,7 @@ svm_hog_model, hog_accuracy = train_evaluate_svm(X_train_hog_features, y_train, 
 print(f'HOG Features SVM Accuracy: {hog_accuracy:.4f}\n')
 
 print("Evaluating model on test set...")
-# Optionally, evaluate the model on test set if needed
+
 y_test_pred = svm_hog_model.predict(X_test_hog_features)
 test_accuracy = accuracy_score(y_test, y_test_pred)
 print(f'Test Accuracy with HOG Features: {test_accuracy:.4f}\n')
