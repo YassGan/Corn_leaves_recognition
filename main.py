@@ -93,13 +93,18 @@ print(f"Time taken to split dataset: {split_end_time - split_start_time:.2f} sec
 def extract_features(images, part_name):
     gabor_features = []
 
-    print(f"Extracting features for {part_name}...")
+    print(f"Extracting Gabor features for {part_name}...")
     start_time = time.time()
 
-    for img in images:
+    total_images = len(images)
+    for i, img in enumerate(images):
         gabor_feat = extract_gabor_features(img)
         gabor_features.append(gabor_feat)
-    
+        
+        # Print the number of images left
+        if (i + 1) % 10 == 0 or (i + 1) == total_images:  # Print every 10 images or on the last image
+            print(f"Processed {i + 1}/{total_images} images for {part_name}...")
+
     gabor_features = np.array(gabor_features)
     
     end_time = time.time()
