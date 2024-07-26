@@ -8,9 +8,12 @@ from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 import time
 
+# Record the start time of the program
+start_time = time.time()
+
 # Train and evaluate SVM
 def train_evaluate_svm(X_train, y_train, X_val, y_val):
-    clf = SVC(kernel='rbf',C=1,gamma=0.0001, random_state=42) 
+    clf = SVC(kernel='rbf', C=1, gamma=0.0001, random_state=42)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     accuracy = accuracy_score(y_val, y_pred)
@@ -42,6 +45,7 @@ def load_images(data_dir, image_size=256):
     labels = []
     print("")
     print("Loading images from", data_dir, "...")
+    load_start_time = time.time()  # Start timing image loading
     try:
         for label in os.listdir(data_dir):
             class_dir = os.path.join(data_dir, label)
@@ -56,16 +60,21 @@ def load_images(data_dir, image_size=256):
                     print(f"Warning: Unable to read image {img_path}")
     except Exception as e:
         print(f"Error loading images from {data_dir}: {e}")
+    load_end_time = time.time()  # End timing image loading
     print(f"Loaded {len(images)} images and {len(labels)} labels.\n")
+    print(f"Time taken to load images: {load_end_time - load_start_time:.2f} seconds\n")
     return images, labels
 
 data_dir = './Alldata'
 images, labels = load_images(data_dir)
 
 print("Splitting dataset...")
+split_start_time = time.time()  # Start timing dataset splitting
 X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.4, random_state=42)
 X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+split_end_time = time.time()  # End timing dataset splitting
 print("Dataset split into training, validation, and test sets.\n")
+print(f"Time taken to split dataset: {split_end_time - split_start_time:.2f} seconds\n")
 
 def extract_features(images, part_name):
     hog_features = []
@@ -84,16 +93,15 @@ def extract_features(images, part_name):
     print(f"HOG feature extraction for {part_name} completed.\n")
     return hog_features, hog_time
 
-
-
 def normalize_features(features, part_name):
     print(f"Normalizing features for {part_name}...")
     scaler = StandardScaler()
+    start_norm_time = time.time()
     scaled_features = scaler.fit_transform(features)
+    end_norm_time = time.time()
     print(f"Feature normalization for {part_name} completed.\n")
-
+    print(f"Time taken for feature normalization in {part_name}: {end_norm_time - start_norm_time:.2f} seconds\n")
     return scaled_features
-
 
 # Extract and normalize features
 X_train_hog_features, train_hog_time = extract_features(X_train, "training")
@@ -106,17 +114,26 @@ X_val_hog_features = normalize_features(X_val_hog_features, "validation")
 X_test_hog_features = normalize_features(X_test_hog_features, "test")
 
 print("Training SVM model...")
-# Train and evaluate SVM on HOG features
+train_start_time = time.time()  # Start timing SVM training
 svm_hog_model, hog_accuracy = train_evaluate_svm(X_train_hog_features, y_train, X_val_hog_features, y_val)
+train_end_time = time.time()  # End timing SVM training
 print(f'HOG Features SVM Accuracy: {hog_accuracy:.4f}\n')
+print(f"Time taken to train SVM model: {train_end_time - train_start_time:.2f} seconds\n")
 
 print("Evaluating model on test set...")
-
+eval_start_time = time.time()  # Start timing SVM evaluation
 y_test_pred = svm_hog_model.predict(X_test_hog_features)
 test_accuracy = accuracy_score(y_test, y_test_pred)
+eval_end_time = time.time()  # End timing SVM evaluation
 print(f'Test Accuracy with HOG Features: {test_accuracy:.4f}\n')
+print(f"Time taken for model evaluation: {eval_end_time - eval_start_time:.2f} seconds\n")
 
 # Print timing information
 print("Time taken for HOG feature extraction on training set:", train_hog_time)
 print("Time taken for HOG feature extraction on validation set:", val_hog_time)
 print("Time taken for HOG feature extraction on test set:", test_hog_time)
+
+# Record the end time of the program
+end_time = time.time()
+total_time = end_time - start_time
+print(f"Total time taken for the entire program: {total_time:.2f} seconds")
