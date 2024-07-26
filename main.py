@@ -19,9 +19,12 @@ def train_evaluate_svm(X_train, y_train, X_val, y_val):
     accuracy = accuracy_score(y_val, y_pred)
     return clf, accuracy
 
+
+
+
 def extract_gabor_features(image):
-    frequencies = [0.1, 0.3, 0.5, 0.7, 0.9]
-    thetas = [0, np.pi/4, np.pi/2, 3*np.pi/4]
+    frequencies = [0.1, 0.3]  # Reduced frequencies
+    thetas = [0, np.pi/4]  # Reduced angles
     bandwidth = 1
     sigma_x = 4
     sigma_y = 4
@@ -36,6 +39,11 @@ def extract_gabor_features(image):
             features.append(filt_imag.mean())
             features.append(filt_imag.var())
     return np.array(features)
+
+
+
+
+
 
 def resize_with_padding(image, target_size):
     old_size = image.shape[:2]
