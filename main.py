@@ -1,7 +1,7 @@
 import os
 import cv2
 import numpy as np
-from skimage.feature import hog
+from skimage.filters import gabor
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
@@ -19,10 +19,24 @@ def train_evaluate_svm(X_train, y_train, X_val, y_val):
     accuracy = accuracy_score(y_val, y_pred)
     return clf, accuracy
 
-# Extract HOG features from images
-def extract_hog_features(image):
-    features, _ = hog(image, orientations=8, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=True)
-    return features
+# Extract Gabor features from images
+def extract_gabor_features(image):
+    frequencies = [0.1, 0.3, 0.5, 0.7, 0.9]
+    thetas = [0, np.pi/4, np.pi/2, 3*np.pi/4]  # orientations
+    bandwidth = 1
+    sigma_x = 4
+    sigma_y = 4
+    n_stds = 3
+    offset = 0
+    features = []
+    for frequency in frequencies:
+        for theta in thetas:
+            filt_real, filt_imag = gabor(image, frequency=frequency, theta=theta, bandwidth=bandwidth, sigma_x=sigma_x, sigma_y=sigma_y, n_stds=n_stds, offset=offset)
+            features.append(filt_real.mean())
+            features.append(filt_real.var())
+            features.append(filt_imag.mean())
+            features.append(filt_imag.var())
+    return np.array(features)
 
 def resize_with_padding(image, target_size):
     old_size = image.shape[:2]  # old_size is in (height, width) format
@@ -77,21 +91,22 @@ print("Dataset split into training, validation, and test sets.\n")
 print(f"Time taken to split dataset: {split_end_time - split_start_time:.2f} seconds\n")
 
 def extract_features(images, part_name):
-    hog_features = []
+    gabor_features = []
 
-    # Start timing HOG feature extraction
-    print(f"Extracting HOG features for {part_name}...")
-    start_hog_time = time.time()
+    print(f"Extracting features for {part_name}...")
+    start_time = time.time()
+
     for img in images:
-        hog_feat = extract_hog_features(img)
-        hog_features.append(hog_feat)
-    end_hog_time = time.time()
-    hog_time = end_hog_time - start_hog_time
+        gabor_feat = extract_gabor_features(img)
+        gabor_features.append(gabor_feat)
+    
+    gabor_features = np.array(gabor_features)
+    
+    end_time = time.time()
+    feature_time = end_time - start_time
 
-    # Convert list to numpy array for consistency
-    hog_features = np.array(hog_features)
-    print(f"HOG feature extraction for {part_name} completed.\n")
-    return hog_features, hog_time
+    print(f"Feature extraction for {part_name} completed.\n")
+    return gabor_features, feature_time
 
 def normalize_features(features, part_name):
     print(f"Normalizing features for {part_name}...")
@@ -103,35 +118,35 @@ def normalize_features(features, part_name):
     print(f"Time taken for feature normalization in {part_name}: {end_norm_time - start_norm_time:.2f} seconds\n")
     return scaled_features
 
-# Extract and normalize features
-X_train_hog_features, train_hog_time = extract_features(X_train, "training")
-X_val_hog_features, val_hog_time = extract_features(X_val, "validation")
-X_test_hog_features, test_hog_time = extract_features(X_test, "test")
+# Extract and normalize Gabor features
+X_train_gabor_features, train_feature_time = extract_features(X_train, "training")
+X_val_gabor_features, val_feature_time = extract_features(X_val, "validation")
+X_test_gabor_features, test_feature_time = extract_features(X_test, "test")
 
 # Normalize features
-X_train_hog_features = normalize_features(X_train_hog_features, "training")
-X_val_hog_features = normalize_features(X_val_hog_features, "validation")
-X_test_hog_features = normalize_features(X_test_hog_features, "test")
+X_train_features = normalize_features(X_train_gabor_features, "training")
+X_val_features = normalize_features(X_val_gabor_features, "validation")
+X_test_features = normalize_features(X_test_gabor_features, "test")
 
 print("Training SVM model...")
-train_start_time = time.time()  # Start timing SVM training
-svm_hog_model, hog_accuracy = train_evaluate_svm(X_train_hog_features, y_train, X_val_hog_features, y_val)
-train_end_time = time.time()  # End timing SVM training
-print(f'HOG Features SVM Accuracy: {hog_accuracy:.4f}\n')
+train_start_time = time.time()
+svm_model, accuracy = train_evaluate_svm(X_train_features, y_train, X_val_features, y_val)
+train_end_time = time.time()
+print(f'SVM Accuracy with Gabor Features: {accuracy:.4f}\n')
 print(f"Time taken to train SVM model: {train_end_time - train_start_time:.2f} seconds\n")
 
 print("Evaluating model on test set...")
-eval_start_time = time.time()  # Start timing SVM evaluation
-y_test_pred = svm_hog_model.predict(X_test_hog_features)
+eval_start_time = time.time()
+y_test_pred = svm_model.predict(X_test_features)
 test_accuracy = accuracy_score(y_test, y_test_pred)
-eval_end_time = time.time()  # End timing SVM evaluation
-print(f'Test Accuracy with HOG Features: {test_accuracy:.4f}\n')
+eval_end_time = time.time()
+print(f'Test Accuracy with Gabor Features: {test_accuracy:.4f}\n')
 print(f"Time taken for model evaluation: {eval_end_time - eval_start_time:.2f} seconds\n")
 
 # Print timing information
-print("Time taken for HOG feature extraction on training set:", train_hog_time)
-print("Time taken for HOG feature extraction on validation set:", val_hog_time)
-print("Time taken for HOG feature extraction on test set:", test_hog_time)
+print("Time taken for Gabor feature extraction on training set:", train_feature_time)
+print("Time taken for Gabor feature extraction on validation set:", val_feature_time)
+print("Time taken for Gabor feature extraction on test set:", test_feature_time)
 
 # Record the end time of the program
 end_time = time.time()
