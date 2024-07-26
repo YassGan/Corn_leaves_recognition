@@ -6,12 +6,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
+from concurrent.futures import ThreadPoolExecutor
 import time
 
 # Record the start time of the program
 start_time = time.time()
 
-# Train and evaluate SVM
 def train_evaluate_svm(X_train, y_train, X_val, y_val):
     clf = SVC(kernel='rbf', C=1, gamma=0.0001, random_state=42)
     clf.fit(X_train, y_train)
@@ -19,10 +19,9 @@ def train_evaluate_svm(X_train, y_train, X_val, y_val):
     accuracy = accuracy_score(y_val, y_pred)
     return clf, accuracy
 
-# Extract Gabor features from images
 def extract_gabor_features(image):
     frequencies = [0.1, 0.3, 0.5, 0.7, 0.9]
-    thetas = [0, np.pi/4, np.pi/2, 3*np.pi/4]  # orientations
+    thetas = [0, np.pi/4, np.pi/2, 3*np.pi/4]
     bandwidth = 1
     sigma_x = 4
     sigma_y = 4
@@ -39,14 +38,12 @@ def extract_gabor_features(image):
     return np.array(features)
 
 def resize_with_padding(image, target_size):
-    old_size = image.shape[:2]  # old_size is in (height, width) format
+    old_size = image.shape[:2]
     ratio = float(target_size) / max(old_size)
     new_size = tuple([int(x * ratio) for x in old_size])
     
-    # Resize image
     resized_image = cv2.resize(image, (new_size[1], new_size[0]))
     
-    # Create a new image and place the resized image at the center
     new_image = np.zeros((target_size, target_size), dtype=np.uint8)
     y_offset = (target_size - new_size[0]) // 2
     x_offset = (target_size - new_size[1]) // 2
@@ -59,59 +56,54 @@ def load_images(data_dir, image_size=256):
     labels = []
     print("")
     print("Loading images from", data_dir, "...")
-    load_start_time = time.time()  # Start timing image loading
+    load_start_time = time.time()
     try:
         for label in os.listdir(data_dir):
             class_dir = os.path.join(data_dir, label)
             for img_name in os.listdir(class_dir):
                 img_path = os.path.join(class_dir, img_name)
-                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)  # Convert to grayscale
+                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
                 if img is not None:
-                    img = resize_with_padding(img, image_size)  # Resize and pad to the target size
+                    img = resize_with_padding(img, image_size)
                     images.append(img)
                     labels.append(label)
                 else:
                     print(f"Warning: Unable to read image {img_path}")
     except Exception as e:
         print(f"Error loading images from {data_dir}: {e}")
-    load_end_time = time.time()  # End timing image loading
+    load_end_time = time.time()
     print(f"Loaded {len(images)} images and {len(labels)} labels.\n")
     print(f"Time taken to load images: {load_end_time - load_start_time:.2f} seconds\n")
-    return images, labels
+    return np.array(images), np.array(labels)
 
-data_dir = './Alldata'
-images, labels = load_images(data_dir)
-
-print("Splitting dataset...")
-split_start_time = time.time()  # Start timing dataset splitting
-X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.4, random_state=42)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
-split_end_time = time.time()  # End timing dataset splitting
-print("Dataset split into training, validation, and test sets.\n")
-print(f"Time taken to split dataset: {split_end_time - split_start_time:.2f} seconds\n")
 
 def extract_features(images, part_name):
     gabor_features = []
-
     print(f"Extracting Gabor features for {part_name}...")
     start_time = time.time()
-
+    
     total_images = len(images)
-    for i, img in enumerate(images):
+    
+    def process_image(img_index_img):
+        img_index, img = img_index_img
         gabor_feat = extract_gabor_features(img)
-        gabor_features.append(gabor_feat)
-        
         # Print the number of images left
-        if (i + 1) % 10 == 0 or (i + 1) == total_images:  # Print every 10 images or on the last image
-            print(f"Processed {i + 1}/{total_images} images for {part_name}...")
-
+        if (img_index + 1) % 10 == 0 or (img_index + 1) == total_images:
+            print(f"Processed {img_index + 1}/{total_images} images for {part_name}...")
+        return gabor_feat
+    
+    with ThreadPoolExecutor() as executor:
+        gabor_features = list(executor.map(process_image, enumerate(images)))
+    
     gabor_features = np.array(gabor_features)
     
     end_time = time.time()
     feature_time = end_time - start_time
-
     print(f"Feature extraction for {part_name} completed.\n")
     return gabor_features, feature_time
+
+
+
 
 def normalize_features(features, part_name):
     print(f"Normalizing features for {part_name}...")
@@ -123,12 +115,21 @@ def normalize_features(features, part_name):
     print(f"Time taken for feature normalization in {part_name}: {end_norm_time - start_norm_time:.2f} seconds\n")
     return scaled_features
 
-# Extract and normalize Gabor features
+data_dir = './Alldata'
+images, labels = load_images(data_dir)
+
+print("Splitting dataset...")
+split_start_time = time.time()
+X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.4, random_state=42)
+X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+split_end_time = time.time()
+print("Dataset split into training, validation, and test sets.\n")
+print(f"Time taken to split dataset: {split_end_time - split_start_time:.2f} seconds\n")
+
 X_train_gabor_features, train_feature_time = extract_features(X_train, "training")
 X_val_gabor_features, val_feature_time = extract_features(X_val, "validation")
 X_test_gabor_features, test_feature_time = extract_features(X_test, "test")
 
-# Normalize features
 X_train_features = normalize_features(X_train_gabor_features, "training")
 X_val_features = normalize_features(X_val_gabor_features, "validation")
 X_test_features = normalize_features(X_test_gabor_features, "test")
@@ -148,12 +149,10 @@ eval_end_time = time.time()
 print(f'Test Accuracy with Gabor Features: {test_accuracy:.4f}\n')
 print(f"Time taken for model evaluation: {eval_end_time - eval_start_time:.2f} seconds\n")
 
-# Print timing information
 print("Time taken for Gabor feature extraction on training set:", train_feature_time)
 print("Time taken for Gabor feature extraction on validation set:", val_feature_time)
 print("Time taken for Gabor feature extraction on test set:", test_feature_time)
 
-# Record the end time of the program
 end_time = time.time()
 total_time = end_time - start_time
 print(f"Total time taken for the entire program: {total_time:.2f} seconds")
