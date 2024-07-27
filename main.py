@@ -7,13 +7,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 import time
 import csv
+import multiprocessing
+from functools import partial
+from tqdm import tqdm
 
 # Function definitions
-import matplotlib.pyplot as plt
-
 def resize_with_padding(image, target_size):
-    start_time = time.time()
-    
     old_size = image.shape[:2]
     ratio = float(target_size) / max(old_size)
     new_size = tuple([int(x * ratio) for x in old_size])
@@ -24,7 +23,6 @@ def resize_with_padding(image, target_size):
     x_offset = (target_size - new_size[1]) // 2
     new_image[y_offset:y_offset + new_size[0], x_offset:x_offset + new_size[1]] = resized_image
     
-    end_time = time.time()
     return new_image
 
 def load_images(data_dir, image_size=256):
@@ -53,20 +51,6 @@ def load_images(data_dir, image_size=256):
     end_time = time.time()
     print(f"load_images execution time: {end_time - start_time:.4f} seconds")
     return images, labels
-
-def get_run_lengths_M(line, max_gray):
-    start_time = time.time()
-    run_lengths = [0] * max_gray
-    length = 1
-    for i in range(1, len(line)):
-        if line[i] == line[i - 1]:
-            length += 1
-        else:
-            run_lengths[line[i - 1]] += length
-            length = 1
-    run_lengths[line[-1]] += length
-    end_time = time.time()
-    return run_lengths
 
 def extract_glrlm_features_M(image):
     # Ensure image is of type uint8
@@ -147,67 +131,19 @@ def extract_glrlm_features_M(image):
 
     return np.array([sre, lre, gln, rln, rp, lgre, hgre, srlge, srhge, lrlge, lrhge])
 
+def extract_features_parallel(images, num_processes=None):
+    if num_processes is None:
+        num_processes = multiprocessing.cpu_count()
 
-
-
-# Load and preprocess dataset
-print("Starting dataset loading...")
-start_time = time.time()
-data_dir = './AllData'
-images, labels = load_images(data_dir)
-end_time = time.time()
-print(f"Total dataset loading time: {end_time - start_time:.4f} seconds")
-
-# Split dataset
-print("Starting dataset split...")
-start_time = time.time()
-X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
-end_time = time.time()
-print(f"Dataset split time: {end_time - start_time:.4f} seconds")
-
-# Extract GLRLM features
-def extract_features(images):
     start_time = time.time()
-    glrlm_features_M = []
-    total_images = len(images)
-    for i, img in enumerate(images):
-        glrlm_feat_M = extract_glrlm_features_M(img)
-        glrlm_features_M.append(glrlm_feat_M)
-        if (i + 1) % 100 == 0:
-            print(f"Extracted features for {i + 1}/{total_images} images")
+    
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        glrlm_features_M = list(tqdm(pool.imap(extract_glrlm_features_M, images), total=len(images)))
+    
     end_time = time.time()
-    print(f"extract_features execution time: {end_time - start_time:.4f} seconds")
+    print(f"Parallel feature extraction time: {end_time - start_time:.4f} seconds")
     return glrlm_features_M
 
-# Initialize CSV file for logging results
-csv_file = 'experiment_results.csv'
-csv_headers = [
-    'Feature Extraction Technique', 'Feature Params', 'SVM Params', 
-    'Normalization Method', 'Normalization Params', 
-    'Feature Extraction Time', 'Normalization Time', 'Training Time', 
-    'Validation Accuracy', 'Test Accuracy'
-]
-
-with open(csv_file, mode='w', newline='') as file:
-    writer = csv.writer(file)
-    writer.writerow(csv_headers)
-
-# List of SVM parameters
-svm_params_list = [
-    {'kernel': 'rbf', 'C': 10.0, 'gamma': 'scale'},
-    {'kernel': 'rbf', 'C': 100.0, 'gamma': 'scale'},
-    {'kernel': 'rbf', 'C': 1.0, 'gamma': 'auto'},
-    {'kernel': 'rbf', 'C': 1.0, 'gamma': 'scale'},  
-    {'kernel': 'linear'}, 
-    {'kernel': 'poly', 'degree': 2, 'C': 1.0},
-    {'kernel': 'poly', 'degree': 3, 'C': 1.0},
-    {'kernel': 'linear', 'C': 0.1},
-    {'kernel': 'linear', 'C': 10.0},
-    {'kernel': 'sigmoid', 'C': 1.0}
-]
-
-# Normalize features
 def normalize_features(features_list):
     start_time = time.time()
     all_features = np.array(features_list)
@@ -216,53 +152,98 @@ def normalize_features(features_list):
     end_time = time.time()
     return scaled_features
 
-# Experiment loop
-for svm_params in svm_params_list:
-    # Extract GLRLM features
-    print("Starting feature extraction...")
+# Main execution
+if __name__ == "__main__":
+    # Load and preprocess dataset
+    print("Starting dataset loading...")
     start_time = time.time()
-    X_train_glrlm_features_M = extract_features(X_train)
-    X_val_glrlm_features_M = extract_features(X_val)
-    X_test_glrlm_features_M = extract_features(X_test)
-    feature_extraction_time = time.time() - start_time
+    data_dir = './AllData'
+    images, labels = load_images(data_dir)
+    end_time = time.time()
+    print(f"Total dataset loading time: {end_time - start_time:.4f} seconds")
 
-    # Normalize features
-    print("Starting feature normalization...")
+    # Split dataset
+    print("Starting dataset split...")
     start_time = time.time()
-    X_train_glrlm_features_M = normalize_features(X_train_glrlm_features_M)
-    X_val_glrlm_features_M = normalize_features(X_val_glrlm_features_M)
-    X_test_glrlm_features_M = normalize_features(X_test_glrlm_features_M)
-    normalization_time = time.time() - start_time
+    X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
+    X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+    end_time = time.time()
+    print(f"Dataset split time: {end_time - start_time:.4f} seconds")
 
-    # Train SVM classifier
-    print("Starting SVM training...")
-    start_time = time.time()
-    clf = SVC(**svm_params)
-    clf.fit(X_train_glrlm_features_M, y_train)
-    training_time = time.time() - start_time
+    # Initialize CSV file for logging results
+    csv_file = 'experiment_results.csv'
+    csv_headers = [
+        'Feature Extraction Technique', 'Feature Params', 'SVM Params', 
+        'Normalization Method', 'Normalization Params', 
+        'Feature Extraction Time', 'Normalization Time', 'Training Time', 
+        'Validation Accuracy', 'Test Accuracy'
+    ]
 
-    # Evaluate classifier
-    print("Starting classifier evaluation...")
-    start_time = time.time()
-    y_val_pred = clf.predict(X_val_glrlm_features_M)
-    y_test_pred = clf.predict(X_test_glrlm_features_M)
-    evaluation_time = time.time() - start_time
-
-    # Collect metrics
-    validation_accuracy = accuracy_score(y_val, y_val_pred)
-    test_accuracy = accuracy_score(y_test, y_test_pred)
-
-    # Log results
-    with open(csv_file, mode='a', newline='') as file:
+    with open(csv_file, mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow([
-            'GLRLM', {}, svm_params, 'StandardScaler', {}, 
-            feature_extraction_time, normalization_time, training_time, 
-            validation_accuracy, test_accuracy
-        ])
+        writer.writerow(csv_headers)
 
-    print(f"Feature Extraction Time: {feature_extraction_time:.4f} seconds")
-    print(f"Normalization Time: {normalization_time:.4f} seconds")
-    print(f"Training Time: {training_time:.4f} seconds")
-    print(f"Validation Accuracy: {validation_accuracy}")
-    print(f"Test Accuracy: {test_accuracy}")
+    # List of SVM parameters
+    svm_params_list = [
+        {'kernel': 'rbf', 'C': 10.0, 'gamma': 'scale'},
+        {'kernel': 'rbf', 'C': 100.0, 'gamma': 'scale'},
+        {'kernel': 'rbf', 'C': 1.0, 'gamma': 'auto'},
+        {'kernel': 'rbf', 'C': 1.0, 'gamma': 'scale'},  
+        {'kernel': 'linear'}, 
+        {'kernel': 'poly', 'degree': 2, 'C': 1.0},
+        {'kernel': 'poly', 'degree': 3, 'C': 1.0},
+        {'kernel': 'linear', 'C': 0.1},
+        {'kernel': 'linear', 'C': 10.0},
+        {'kernel': 'sigmoid', 'C': 1.0}
+    ]
+
+    # Experiment loop
+    for svm_params in svm_params_list:
+        # Extract GLRLM features
+        print("Starting parallel feature extraction...")
+        start_time = time.time()
+        X_train_glrlm_features_M = extract_features_parallel(X_train)
+        X_val_glrlm_features_M = extract_features_parallel(X_val)
+        X_test_glrlm_features_M = extract_features_parallel(X_test)
+        feature_extraction_time = time.time() - start_time
+
+        # Normalize features
+        print("Starting feature normalization...")
+        start_time = time.time()
+        X_train_glrlm_features_M = normalize_features(X_train_glrlm_features_M)
+        X_val_glrlm_features_M = normalize_features(X_val_glrlm_features_M)
+        X_test_glrlm_features_M = normalize_features(X_test_glrlm_features_M)
+        normalization_time = time.time() - start_time
+
+        # Train SVM classifier
+        print("Starting SVM training...")
+        start_time = time.time()
+        clf = SVC(**svm_params)
+        clf.fit(X_train_glrlm_features_M, y_train)
+        training_time = time.time() - start_time
+
+        # Evaluate classifier
+        print("Starting classifier evaluation...")
+        start_time = time.time()
+        y_val_pred = clf.predict(X_val_glrlm_features_M)
+        y_test_pred = clf.predict(X_test_glrlm_features_M)
+        evaluation_time = time.time() - start_time
+
+        # Collect metrics
+        validation_accuracy = accuracy_score(y_val, y_val_pred)
+        test_accuracy = accuracy_score(y_test, y_test_pred)
+
+        # Log results
+        with open(csv_file, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([
+                'GLRLM', {}, svm_params, 'StandardScaler', {}, 
+                feature_extraction_time, normalization_time, training_time, 
+                validation_accuracy, test_accuracy
+            ])
+
+        print(f"Feature Extraction Time: {feature_extraction_time:.4f} seconds")
+        print(f"Normalization Time: {normalization_time:.4f} seconds")
+        print(f"Training Time: {training_time:.4f} seconds")
+        print(f"Validation Accuracy: {validation_accuracy}")
+        print(f"Test Accuracy: {test_accuracy}")
