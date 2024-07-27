@@ -6,19 +6,13 @@ from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 import time
+import csv
 
 # Function definitions
 import matplotlib.pyplot as plt
 
 def resize_with_padding(image, target_size):
     start_time = time.time()
-    
-    # Display original image
-    # plt.figure(figsize=(8, 4))
-    # plt.subplot(1, 2, 1)
-    # plt.title("Original Image")
-    # plt.imshow(image, cmap='gray')
-    # plt.axis('off')
     
     old_size = image.shape[:2]
     ratio = float(target_size) / max(old_size)
@@ -30,17 +24,8 @@ def resize_with_padding(image, target_size):
     x_offset = (target_size - new_size[1]) // 2
     new_image[y_offset:y_offset + new_size[0], x_offset:x_offset + new_size[1]] = resized_image
     
-    # Display resized image
-    # plt.subplot(1, 2, 2)
-    # plt.title("Resized Image")
-    # plt.imshow(new_image, cmap='gray')
-    # plt.axis('off')
-    
-    # plt.show()
-    
     end_time = time.time()
     return new_image
-
 
 def load_images(data_dir, image_size=256):
     start_time = time.time()
@@ -84,37 +69,86 @@ def get_run_lengths_M(line, max_gray):
     return run_lengths
 
 def extract_glrlm_features_M(image):
-    start_time = time.time()
-    max_gray = 256
-    all_run_lengths = []
-    for direction in [0, 1, 2, 3]:
-        if direction == 0:
+    # Ensure image is of type uint8
+    image = image.astype(np.uint8)
+    
+    # Calculate max_gray safely
+    max_gray = int(np.max(image)) + 1
+    max_run = np.max(image.shape)
+    
+    # Initialize GLRLM with a minimum size of 1 for each dimension
+    glrlm = np.zeros((max(max_gray, 1), max(max_run, 1), 4), dtype=int)
+    
+    # Calculate GLRLM for 0, 45, 90, 135 degrees
+    for angle in range(4):
+        if angle == 0:
             for row in image:
-                run_lengths = get_run_lengths_M(row, max_gray)
-                all_run_lengths.append(run_lengths)
-        elif direction == 1:
+                run_length = 1
+                for i in range(1, len(row)):
+                    if row[i] == row[i-1]:
+                        run_length += 1
+                    else:
+                        glrlm[row[i-1], run_length-1, angle] += 1
+                        run_length = 1
+                glrlm[row[-1], run_length-1, angle] += 1
+        elif angle == 1:
             for col in image.T:
-                run_lengths = get_run_lengths_M(col, max_gray)
-                all_run_lengths.append(run_lengths)
-        elif direction == 2:
-            for offset in range(-image.shape[0] + 1, image.shape[1]):
-                diag = image.diagonal(offset)
-                run_lengths = get_run_lengths_M(diag, max_gray)
-                all_run_lengths.append(run_lengths)
-        elif direction == 3:
-            for offset in range(-image.shape[0] + 1, image.shape[1]):
-                anti_diag = np.fliplr(image).diagonal(offset)
-                run_lengths = get_run_lengths_M(anti_diag, max_gray)
-                all_run_lengths.append(run_lengths)
-    flat_run_lengths = np.concatenate(all_run_lengths)
-    total_pixels = image.size
-    SRE = np.sum((flat_run_lengths / total_pixels) ** 2)
-    LRE = np.sum(flat_run_lengths ** 2) / total_pixels
-    GLN = np.sum(np.sum(np.array(all_run_lengths), axis=0) ** 2) / (total_pixels ** 2)
-    RLN = np.sum(np.sum(np.array(all_run_lengths), axis=1) ** 2) / (total_pixels ** 2)
-    RP = np.sum(flat_run_lengths) / total_pixels
-    end_time = time.time()
-    return np.array([SRE, LRE, GLN, RLN, RP])
+                run_length = 1
+                for i in range(1, len(col)):
+                    if col[i] == col[i-1]:
+                        run_length += 1
+                    else:
+                        glrlm[col[i-1], run_length-1, angle] += 1
+                        run_length = 1
+                glrlm[col[-1], run_length-1, angle] += 1
+        elif angle == 2:
+            for diag in [image.diagonal(i) for i in range(-image.shape[0]+1, image.shape[1])]:
+                run_length = 1
+                for i in range(1, len(diag)):
+                    if diag[i] == diag[i-1]:
+                        run_length += 1
+                    else:
+                        glrlm[diag[i-1], run_length-1, angle] += 1
+                        run_length = 1
+                glrlm[diag[-1], run_length-1, angle] += 1
+        else:
+            flipped = np.fliplr(image)
+            for diag in [flipped.diagonal(i) for i in range(-flipped.shape[0]+1, flipped.shape[1])]:
+                run_length = 1
+                for i in range(1, len(diag)):
+                    if diag[i] == diag[i-1]:
+                        run_length += 1
+                    else:
+                        glrlm[diag[i-1], run_length-1, angle] += 1
+                        run_length = 1
+                glrlm[diag[-1], run_length-1, angle] += 1
+    
+    # Normalize GLRLM
+    glrlm_sum = np.sum(glrlm)
+    if glrlm_sum == 0:
+        return np.zeros(11)  # Return zero features if GLRLM is empty
+    p = glrlm / glrlm_sum
+
+    # Calculate features
+    g_indices = np.arange(max_gray)[:, np.newaxis, np.newaxis]
+    r_indices = np.arange(max_run)[np.newaxis, :, np.newaxis]
+    
+    sre = np.sum(p / (r_indices**2 + 1e-6))
+    lre = np.sum(p * r_indices**2)
+    gln = np.sum(np.sum(p, axis=1)**2)
+    rln = np.sum(np.sum(p, axis=0)**2)
+    rp = np.sum(p)
+    lgre = np.sum(p / (g_indices**2 + 1e-6))
+    hgre = np.sum(p * g_indices**2)
+    srlge = np.sum(p / ((r_indices**2 + 1e-6) * (g_indices**2 + 1e-6)))
+    srhge = np.sum(p * g_indices**2 / (r_indices**2 + 1e-6))
+    lrlge = np.sum(p * r_indices**2 / (g_indices**2 + 1e-6))
+    lrhge = np.sum(p * r_indices**2 * g_indices**2)
+
+    return np.array([sre, lre, gln, rln, rp, lgre, hgre, srlge, srhge, lrlge, lrhge])
+
+
+
 
 # Load and preprocess dataset
 print("Starting dataset loading...")
@@ -146,19 +180,32 @@ def extract_features(images):
     print(f"extract_features execution time: {end_time - start_time:.4f} seconds")
     return glrlm_features_M
 
-print("Starting feature extraction...")
-start_time = time.time()
-X_train_glrlm_features_M = extract_features(X_train)
-X_val_glrlm_features_M = extract_features(X_val)
-X_test_glrlm_features_M = extract_features(X_test)
-end_time = time.time()
-print(f"Total feature extraction time: {end_time - start_time:.4f} seconds")
+# Initialize CSV file for logging results
+csv_file = 'experiment_results.csv'
+csv_headers = [
+    'Feature Extraction Technique', 'Feature Params', 'SVM Params', 
+    'Normalization Method', 'Normalization Params', 
+    'Feature Extraction Time', 'Normalization Time', 'Training Time', 
+    'Validation Accuracy', 'Test Accuracy'
+]
 
-# Ensure all feature vectors have the same length
-feature_lengths = [len(fv) for fv in X_train_glrlm_features_M]
-print(f"Feature lengths: {feature_lengths}")
-if len(set(feature_lengths)) != 1:
-    raise ValueError("Feature vectors have inconsistent lengths.")
+with open(csv_file, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(csv_headers)
+
+# List of SVM parameters
+svm_params_list = [
+    {'kernel': 'rbf', 'C': 10.0, 'gamma': 'scale'},
+    {'kernel': 'rbf', 'C': 100.0, 'gamma': 'scale'},
+    {'kernel': 'rbf', 'C': 1.0, 'gamma': 'auto'},
+    {'kernel': 'rbf', 'C': 1.0, 'gamma': 'scale'},  
+    {'kernel': 'linear'}, 
+    {'kernel': 'poly', 'degree': 2, 'C': 1.0},
+    {'kernel': 'poly', 'degree': 3, 'C': 1.0},
+    {'kernel': 'linear', 'C': 0.1},
+    {'kernel': 'linear', 'C': 10.0},
+    {'kernel': 'sigmoid', 'C': 1.0}
+]
 
 # Normalize features
 def normalize_features(features_list):
@@ -169,31 +216,53 @@ def normalize_features(features_list):
     end_time = time.time()
     return scaled_features
 
-print("Starting feature normalization...")
-start_time = time.time()
-X_train_glrlm_features_M = normalize_features(X_train_glrlm_features_M)
-X_val_glrlm_features_M = normalize_features(X_val_glrlm_features_M)
-X_test_glrlm_features_M = normalize_features(X_test_glrlm_features_M)
-end_time = time.time()
-print(f"Feature normalization time: {end_time - start_time:.4f} seconds")
+# Experiment loop
+for svm_params in svm_params_list:
+    # Extract GLRLM features
+    print("Starting feature extraction...")
+    start_time = time.time()
+    X_train_glrlm_features_M = extract_features(X_train)
+    X_val_glrlm_features_M = extract_features(X_val)
+    X_test_glrlm_features_M = extract_features(X_test)
+    feature_extraction_time = time.time() - start_time
 
-# Train SVM classifier
-print("Starting SVM training...")
-start_time = time.time()
-clf = SVC(kernel='linear')
-clf.fit(X_train_glrlm_features_M, y_train)
-end_time = time.time()
-print(f"SVM training time: {end_time - start_time:.4f} seconds")
+    # Normalize features
+    print("Starting feature normalization...")
+    start_time = time.time()
+    X_train_glrlm_features_M = normalize_features(X_train_glrlm_features_M)
+    X_val_glrlm_features_M = normalize_features(X_val_glrlm_features_M)
+    X_test_glrlm_features_M = normalize_features(X_test_glrlm_features_M)
+    normalization_time = time.time() - start_time
 
-# Evaluate classifier
-print("Starting classifier evaluation...")
-start_time = time.time()
-y_val_pred = clf.predict(X_val_glrlm_features_M)
-y_test_pred = clf.predict(X_test_glrlm_features_M)
-end_time = time.time()
-print(f"Classifier evaluation time: {end_time - start_time:.4f} seconds")
+    # Train SVM classifier
+    print("Starting SVM training...")
+    start_time = time.time()
+    clf = SVC(**svm_params)
+    clf.fit(X_train_glrlm_features_M, y_train)
+    training_time = time.time() - start_time
 
-print("Validation Accuracy:", accuracy_score(y_val, y_val_pred))
-print("Test Accuracy:", accuracy_score(y_test, y_test_pred))
-print("Validation Classification Report:\n", classification_report(y_val, y_val_pred))
-print("Test Classification Report:\n", classification_report(y_test, y_test_pred))
+    # Evaluate classifier
+    print("Starting classifier evaluation...")
+    start_time = time.time()
+    y_val_pred = clf.predict(X_val_glrlm_features_M)
+    y_test_pred = clf.predict(X_test_glrlm_features_M)
+    evaluation_time = time.time() - start_time
+
+    # Collect metrics
+    validation_accuracy = accuracy_score(y_val, y_val_pred)
+    test_accuracy = accuracy_score(y_test, y_test_pred)
+
+    # Log results
+    with open(csv_file, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            'GLRLM', {}, svm_params, 'StandardScaler', {}, 
+            feature_extraction_time, normalization_time, training_time, 
+            validation_accuracy, test_accuracy
+        ])
+
+    print(f"Feature Extraction Time: {feature_extraction_time:.4f} seconds")
+    print(f"Normalization Time: {normalization_time:.4f} seconds")
+    print(f"Training Time: {training_time:.4f} seconds")
+    print(f"Validation Accuracy: {validation_accuracy}")
+    print(f"Test Accuracy: {test_accuracy}")
