@@ -8,7 +8,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 import time
 import matplotlib.pyplot as plt
-
+import pickle  # Import pickle for saving/loading the model
 
 # Train and evaluate SVM
 def train_evaluate_svm(X_train, y_train, X_val, y_val):
@@ -103,18 +103,14 @@ X_train_lbp_features, train_lbp_time = extract_features(X_train, "training")
 X_val_lbp_features, val_lbp_time = extract_features(X_val, "validation")
 X_test_lbp_features, test_lbp_time = extract_features(X_test, "test")
 
-
-print("A sample of a lbp feature ",X_train_lbp_features[0])
+print("A sample of a lbp feature ", X_train_lbp_features[0])
 
 # Normalize features
 X_train_lbp_features = normalize_features(X_train_lbp_features, "training")
 X_val_lbp_features = normalize_features(X_val_lbp_features, "validation")
 X_test_lbp_features = normalize_features(X_test_lbp_features, "test")
 
-print("A sample of a normalized lbp feature ",X_train_lbp_features[0])
-
-
-
+print("A sample of a normalized lbp feature ", X_train_lbp_features[0])
 
 print("Training SVM model...")
 # Train and evaluate SVM on LBP features
@@ -132,37 +128,8 @@ print("Time taken for LBP feature extraction on training set:", train_lbp_time)
 print("Time taken for LBP feature extraction on validation set:", val_lbp_time)
 print("Time taken for LBP feature extraction on test set:", test_lbp_time)
 
-
-
-
-
-# Function to predict the class of a new image
-def predict_image_class(image_path, svm_model, target_size=256):
-    # Read the image
-    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    
-    # Resize and pad the image
-    img = resize_with_padding(img, target_size)
-    
-    # Extract LBP features
-    lbp_features = extract_lbp_features(img)
-    
-    # Normalize the features
-    scaler = StandardScaler()
-    lbp_features = scaler.fit_transform([lbp_features])
-    
-    # Predict the class
-    predicted_class = svm_model.predict(lbp_features)
-    
-    return predicted_class
-
-# Test the function
-image_path = './test_App/Corn_Common_Rust (1).jpg'  
-predicted_class = predict_image_class(image_path, svm_lbp_model)
-
-# Display the image
-img = cv2.imread(image_path)
-img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-plt.imshow(img)
-plt.title(f'Predicted Class: {predicted_class[0]}')
-plt.show()
+# Save the model using pickle
+model_filename = 'svm_lbp_model.pkl'
+with open(model_filename, 'wb') as file:
+    pickle.dump(svm_lbp_model, file)
+print(f"Model saved to {model_filename}")
