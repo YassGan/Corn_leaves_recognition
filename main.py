@@ -12,19 +12,14 @@ import time
 # Record the start time of the program
 start_time = time.time()
 
-def train_evaluate_svm(X_train, y_train, X_val, y_val):
-    clf = SVC(kernel='rbf', C=1, gamma=0.0001, random_state=42)
+def train_evaluate_svm(X_train, y_train, X_val, y_val, kernel='rbf', C=1, gamma=0.0001):
+    clf = SVC(kernel=kernel, C=C, gamma=gamma, random_state=42)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     accuracy = accuracy_score(y_val, y_pred)
     return clf, accuracy
 
-
-
-
-def extract_gabor_features(image):
-    frequencies = [0.1, 0.3]  # Reduced frequencies
-    thetas = [0, np.pi/4]  # Reduced angles
+def extract_gabor_features(image, frequencies=[0.1, 0.3], thetas=[0, np.pi/4]):
     bandwidth = 1
     sigma_x = 4
     sigma_y = 4
@@ -34,16 +29,8 @@ def extract_gabor_features(image):
     for frequency in frequencies:
         for theta in thetas:
             filt_real, filt_imag = gabor(image, frequency=frequency, theta=theta, bandwidth=bandwidth, sigma_x=sigma_x, sigma_y=sigma_y, n_stds=n_stds, offset=offset)
-            features.append(filt_real.mean())
-            features.append(filt_real.var())
-            features.append(filt_imag.mean())
-            features.append(filt_imag.var())
+            features.extend([filt_real.mean(), filt_real.var(), filt_imag.mean(), filt_imag.var()])
     return np.array(features)
-
-
-
-
-
 
 def resize_with_padding(image, target_size):
     old_size = image.shape[:2]
@@ -62,7 +49,6 @@ def resize_with_padding(image, target_size):
 def load_images(data_dir, image_size=256):
     images = []
     labels = []
-    print("")
     print("Loading images from", data_dir, "...")
     load_start_time = time.time()
     try:
@@ -84,7 +70,6 @@ def load_images(data_dir, image_size=256):
     print(f"Time taken to load images: {load_end_time - load_start_time:.2f} seconds\n")
     return np.array(images), np.array(labels)
 
-
 def extract_features(images, part_name):
     gabor_features = []
     print(f"Extracting Gabor features for {part_name}...")
@@ -95,12 +80,11 @@ def extract_features(images, part_name):
     def process_image(img_index_img):
         img_index, img = img_index_img
         gabor_feat = extract_gabor_features(img)
-        # Print the number of images left
         if (img_index + 1) % 10 == 0 or (img_index + 1) == total_images:
             print(f"Processed {img_index + 1}/{total_images} images for {part_name}...")
         return gabor_feat
     
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count())) as executor:
         gabor_features = list(executor.map(process_image, enumerate(images)))
     
     gabor_features = np.array(gabor_features)
@@ -109,9 +93,6 @@ def extract_features(images, part_name):
     feature_time = end_time - start_time
     print(f"Feature extraction for {part_name} completed.\n")
     return gabor_features, feature_time
-
-
-
 
 def normalize_features(features, part_name):
     print(f"Normalizing features for {part_name}...")
