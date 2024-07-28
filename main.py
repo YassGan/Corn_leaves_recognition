@@ -1,64 +1,168 @@
+import os
 import cv2
 import numpy as np
 from skimage.feature import local_binary_pattern
-import pickle
-import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.preprocessing import StandardScaler
+import time
 
-def predict_image_class(image_path, model_filename, scaler_filename):
-    # Load the SVM model and StandardScaler object from files
-    with open(model_filename, 'rb') as model_file:
-        loaded_model = pickle.load(model_file)
-    with open(scaler_filename, 'rb') as scaler_file:
-        loaded_scaler = pickle.load(scaler_file)
+# Train and evaluate SVM
+def train_evaluate_svm(X_train, y_train, X_val, y_val):
+    clf = SVC(kernel='rbf', C=10)  # RBF kernel SVM
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_val)
+    accuracy = accuracy_score(y_val, y_pred)
+    return clf, accuracy, y_pred
 
-    # Read the image
-    image = cv2.imread(image_path)
+# Train and evaluate KNN
+def train_evaluate_knn(X_train, y_train, X_val, y_val, n_neighbors=5):
+    knn = KNeighborsClassifier(n_neighbors=n_neighbors)
+    knn.fit(X_train, y_train)
+    y_pred = knn.predict(X_val)
+    accuracy = accuracy_score(y_val, y_pred)
+    return knn, accuracy, y_pred
 
-    # Show the image
-    plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    plt.axis('off')
+# Extract LBP features from images
+def extract_lbp_features(image, P=16, R=2):
+    lbp = local_binary_pattern(image, P, R, method='uniform')
+    n_bins = P + 2
+    (hist, _) = np.histogram(lbp.ravel(), bins=np.arange(0, n_bins + 1), range=(0, n_bins))
+    hist = hist.astype("float")
+    hist /= (hist.sum() + 1e-6)  # Normalize the histogram
+    return hist
 
-    # Convert the image to grayscale
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # Resize the image to the target size
-    target_size = 256
-    old_size = gray_image.shape[:2]  # old_size is in (height, width) format
+def resize_with_padding(image, target_size):
+    old_size = image.shape[:2]  # old_size is in (height, width) format
     ratio = float(target_size) / max(old_size)
     new_size = tuple([int(x * ratio) for x in old_size])
-    resized_image = cv2.resize(gray_image, (new_size[1], new_size[0]))
+    
+    # Resize image
+    resized_image = cv2.resize(image, (new_size[1], new_size[0]))
+    
+    # Create a new image and place the resized image at the center
     new_image = np.zeros((target_size, target_size), dtype=np.uint8)
     y_offset = (target_size - new_size[0]) // 2
     x_offset = (target_size - new_size[1]) // 2
     new_image[y_offset:y_offset + new_size[0], x_offset:x_offset + new_size[1]] = resized_image
+    
+    return new_image
 
-    # Extract LBP features from the image
-    lbp = local_binary_pattern(new_image, 16, 2, method='uniform')
-    n_bins = 16 + 2
-    (hist, _) = np.histogram(lbp.ravel(), bins=np.arange(0, n_bins + 1), range=(0, n_bins))
-    hist = hist.astype("float")
-    hist /= (hist.sum() + 1e-6)  # Normalize the histogram
+def load_images(data_dir, image_size=256):
+    images = []
+    labels = []
+    print("")
+    print("Loading images from", data_dir, "...")
+    try:
+        for label in os.listdir(data_dir):
+            class_dir = os.path.join(data_dir, label)
+            for img_name in os.listdir(class_dir):
+                img_path = os.path.join(class_dir, img_name)
+                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)  # Convert to grayscale
+                if img is not None:
+                    img = resize_with_padding(img, image_size)  # Resize and pad to the target size
+                    images.append(img)
+                    labels.append(label)
+                else:
+                    print(f"Warning: Unable to read image {img_path}")
+    except Exception as e:
+        print(f"Error loading images from {data_dir}: {e}")
+    print(f"Loaded {len(images)} images and {len(labels)} labels.\n")
+    return images, labels
 
-    # Normalize the features using the loaded scaler
-    scaled_features = loaded_scaler.transform([hist])
+def extract_features(images, part_name):
+    lbp_features = []
 
-    # Use the loaded model to predict the class
-    predicted_class = loaded_model.predict(scaled_features)
+    # Start timing LBP feature extraction
+    print(f"Extracting LBP features for {part_name}...")
+    start_lbp_time = time.time()
+    for img in images:
+        lbp_feat = extract_lbp_features(img)
+        lbp_features.append(lbp_feat)
+    end_lbp_time = time.time()
+    lbp_time = end_lbp_time - start_lbp_time
 
-    # Show the predicted class
-    plt.title(f'Predicted class: {predicted_class[0]}')
-    plt.show()
+    # Convert list to numpy array for consistency
+    lbp_features = np.array(lbp_features)
+    print(f"LBP feature extraction for {part_name} completed.\n")
+    return lbp_features, lbp_time
 
-# Example usage
-# image_path = 'test_App/Corn_Health (15).jpg'
+def normalize_features(features, part_name):
+    print(f"Normalizing features for {part_name}...")
+    scaler = StandardScaler()
+    scaled_features = scaler.fit_transform(features)
+    print(f"Feature normalization for {part_name} completed.\n")
 
-# image_path = 'test_App/Corn_Common_Rust (1306).jpg'
+    return scaled_features
 
+# Main execution
+if __name__ == "__main__":
+    data_dir = './DataToWorkWith'
+    images, labels = load_images(data_dir)
 
-image_path = 'test_App/Corn_Blight (1143).jpg'
+    print("Splitting dataset...")
+    X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
+    X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+    print("Dataset split into training, validation, and test sets.\n")
 
+    # Extract and normalize features
+    X_train_lbp_features, train_lbp_time = extract_features(X_train, "training")
+    X_val_lbp_features, val_lbp_time = extract_features(X_val, "validation")
+    X_test_lbp_features, test_lbp_time = extract_features(X_test, "test")
 
+    print("A sample of a lbp feature ", X_train_lbp_features[0])
 
-model_filename = 'svm_lbp_model.pkl'
-scaler_filename = 'scaler.pkl'
-predict_image_class(image_path, model_filename, scaler_filename)
+    # Normalize features
+    X_train_lbp_features = normalize_features(X_train_lbp_features, "training")
+    X_val_lbp_features = normalize_features(X_val_lbp_features, "validation")
+    X_test_lbp_features = normalize_features(X_test_lbp_features, "test")
+
+    print("A sample of a normalized lbp feature ", X_train_lbp_features[0])
+
+    print("Training SVM model...")
+    # Train and evaluate SVM on LBP features
+    svm_lbp_model, lbp_accuracy, val_predictions_svm = train_evaluate_svm(X_train_lbp_features, y_train, X_val_lbp_features, y_val)
+    print(f'LBP Features SVM Accuracy: {lbp_accuracy:.4f}\n')
+
+    print("Training KNN model...")
+    # Train and evaluate KNN on LBP features
+    knn_lbp_model, knn_accuracy, val_predictions_knn = train_evaluate_knn(X_train_lbp_features, y_train, X_val_lbp_features, y_val)
+    print(f'LBP Features KNN Accuracy: {knn_accuracy:.4f}\n')
+
+    print("Evaluating models on test set...")
+    # Evaluate both models on test set
+    y_test_pred_svm = svm_lbp_model.predict(X_test_lbp_features)
+    y_test_pred_knn = knn_lbp_model.predict(X_test_lbp_features)
+    test_accuracy_svm = accuracy_score(y_test, y_test_pred_svm)
+    test_accuracy_knn = accuracy_score(y_test, y_test_pred_knn)
+    print(f'Test Accuracy with LBP Features (SVM): {test_accuracy_svm:.4f}')
+    print(f'Test Accuracy with LBP Features (KNN): {test_accuracy_knn:.4f}\n')
+
+    # Generate and print classification reports and confusion matrices
+    print("Classification Report for Validation Set (SVM):")
+    print(classification_report(y_val, val_predictions_svm))
+    print("Confusion Matrix for Validation Set (SVM):")
+    print(confusion_matrix(y_val, val_predictions_svm))
+
+    print("\nClassification Report for Validation Set (KNN):")
+    print(classification_report(y_val, val_predictions_knn))
+    print("Confusion Matrix for Validation Set (KNN):")
+    print(confusion_matrix(y_val, val_predictions_knn))
+
+    print("\nClassification Report for Test Set (SVM):")
+    print(classification_report(y_test, y_test_pred_svm))
+    print("Confusion Matrix for Test Set (SVM):")
+    print(confusion_matrix(y_test, y_test_pred_svm))
+
+    print("\nClassification Report for Test Set (KNN):")
+    print(classification_report(y_test, y_test_pred_knn))
+    print("Confusion Matrix for Test Set (KNN):")
+    print(confusion_matrix(y_test, y_test_pred_knn))
+
+    # Print timing information
+    print("\nTime taken for LBP feature extraction:")
+    print(f"Training set: {train_lbp_time:.2f} seconds")
+    print(f"Validation set: {val_lbp_time:.2f} seconds")
+    print(f"Test set: {test_lbp_time:.2f} seconds")
