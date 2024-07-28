@@ -1,6 +1,7 @@
 import os
 import cv2
 import numpy as np
+import pandas as pd
 from skimage.feature import local_binary_pattern
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
@@ -8,15 +9,15 @@ from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 import time
 
-# Train and evaluate SVM
-def train_evaluate_svm(X_train, y_train, X_val, y_val):
-    clf = SVC(kernel='linear', random_state=42)  # Linear kernel SVM
+# Function to train and evaluate SVM
+def train_evaluate_svm(X_train, y_train, X_val, y_val, kernel='linear', C=1.0):
+    clf = SVC(kernel=kernel, C=C, random_state=42)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     accuracy = accuracy_score(y_val, y_pred)
     return clf, accuracy
 
-# Extract LBP features from images
+# Function to extract LBP features from images
 def extract_lbp_features(image, P=8, R=1):
     lbp = local_binary_pattern(image, P, R, method='uniform')
     n_bins = P + 2
@@ -25,6 +26,7 @@ def extract_lbp_features(image, P=8, R=1):
     hist /= (hist.sum() + 1e-6)  # Normalize the histogram
     return hist
 
+# Function to resize images with padding
 def resize_with_padding(image, target_size):
     old_size = image.shape[:2]  # old_size is in (height, width) format
     ratio = float(target_size) / max(old_size)
@@ -41,6 +43,7 @@ def resize_with_padding(image, target_size):
     
     return new_image
 
+# Function to load images
 def load_images(data_dir, image_size=256):
     images = []
     labels = []
@@ -63,69 +66,80 @@ def load_images(data_dir, image_size=256):
     print(f"Loaded {len(images)} images and {len(labels)} labels.\n")
     return images, labels
 
-data_dir = './Alldata'
-images, labels = load_images(data_dir)
-
-print("Splitting dataset...")
-X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
-print("Dataset split into training, validation, and test sets.\n")
-
-def extract_features(images, part_name):
+# Function to extract features
+def extract_features(images, P, R):
     lbp_features = []
-
-    # Start timing LBP feature extraction
-    print(f"Extracting LBP features for {part_name}...")
     start_lbp_time = time.time()
     for img in images:
-        lbp_feat = extract_lbp_features(img)
+        lbp_feat = extract_lbp_features(img, P, R)
         lbp_features.append(lbp_feat)
     end_lbp_time = time.time()
     lbp_time = end_lbp_time - start_lbp_time
-
-    # Convert list to numpy array for consistency
     lbp_features = np.array(lbp_features)
-    print(f"LBP feature extraction for {part_name} completed.\n")
     return lbp_features, lbp_time
 
-def normalize_features(features, part_name):
-    print(f"Normalizing features for {part_name}...")
+# Function to normalize features
+def normalize_features(features):
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(features)
-    print(f"Feature normalization for {part_name} completed.\n")
-
     return scaled_features
 
-# Extract and normalize features
-X_train_lbp_features, train_lbp_time = extract_features(X_train, "training")
-X_val_lbp_features, val_lbp_time = extract_features(X_val, "validation")
-X_test_lbp_features, test_lbp_time = extract_features(X_test, "test")
+# Directory containing image data
+data_dir = './Alldata'
+images, labels = load_images(data_dir)
 
+# Split dataset
+X_train, X_temp, y_train, y_temp = train_test_split(images, labels, test_size=0.3, random_state=42)
+X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
 
-print("A sample of a lbp feature ",X_train_lbp_features[0])
+# List of parameters to test
+lbps_params = [(8, 1), (16, 2)]  # (P, R)
+svm_params = [('linear', 1.0), ('rbf', 1.0), ('rbf', 10.0)]
 
-# Normalize features
-X_train_lbp_features = normalize_features(X_train_lbp_features, "training")
-X_val_lbp_features = normalize_features(X_val_lbp_features, "validation")
-X_test_lbp_features = normalize_features(X_test_lbp_features, "test")
+# Prepare to collect results
+results = []
 
-print("A sample of a normalized lbp feature ",X_train_lbp_features[0])
+for P, R in lbps_params:
+    for kernel, C in svm_params:
+        print(f"Testing LBP (P={P}, R={R}) with SVM (kernel={kernel}, C={C})...")
 
+        # Extract and normalize features
+        X_train_lbp_features, train_lbp_time = extract_features(X_train, P, R)
+        X_val_lbp_features, val_lbp_time = extract_features(X_val, P, R)
+        X_test_lbp_features, test_lbp_time = extract_features(X_test, P, R)
 
+        X_train_lbp_features = normalize_features(X_train_lbp_features)
+        X_val_lbp_features = normalize_features(X_val_lbp_features)
+        X_test_lbp_features = normalize_features(X_test_lbp_features)
 
+        # Train and evaluate SVM model
+        start_svm_time = time.time()
+        svm_lbp_model, lbp_accuracy = train_evaluate_svm(X_train_lbp_features, y_train, X_val_lbp_features, y_val, kernel, C)
+        end_svm_time = time.time()
+        svm_time = end_svm_time - start_svm_time
 
-print("Training SVM model...")
-# Train and evaluate SVM on LBP features
-svm_lbp_model, lbp_accuracy = train_evaluate_svm(X_train_lbp_features, y_train, X_val_lbp_features, y_val)
-print(f'LBP Features SVM Accuracy: {lbp_accuracy:.4f}\n')
+        # Evaluate on test set
+        y_test_pred = svm_lbp_model.predict(X_test_lbp_features)
+        test_accuracy = accuracy_score(y_test, y_test_pred)
 
-print("Evaluating model on test set...")
-# Optionally, evaluate the model on test set if needed
-y_test_pred = svm_lbp_model.predict(X_test_lbp_features)
-test_accuracy = accuracy_score(y_test, y_test_pred)
-print(f'Test Accuracy with LBP Features: {test_accuracy:.4f}\n')
+        # Record results
+        results.append({
+            'LBP_P': P,
+            'LBP_R': R,
+            'SVM_kernel': kernel,
+            'SVM_C': C,
+            'Train_LBP_Time': train_lbp_time,
+            'Val_LBP_Time': val_lbp_time,
+            'Test_LBP_Time': test_lbp_time,
+            'SVM_Time': svm_time,
+            'Validation_Accuracy': lbp_accuracy,
+            'Test_Accuracy': test_accuracy
+        })
 
-# Print timing information
-print("Time taken for LBP feature extraction on training set:", train_lbp_time)
-print("Time taken for LBP feature extraction on validation set:", val_lbp_time)
-print("Time taken for LBP feature extraction on test set:", test_lbp_time)
+        print(f"Validation Accuracy: {lbp_accuracy:.4f}")
+        print(f"Test Accuracy: {test_accuracy:.4f}\n")
+
+# Convert results to DataFrame and save to CSV
+results_df = pd.DataFrame(results)
+results_df.to_csv('experiment_results.csv', index=False)
+print("Results saved to experiment_results.csv")
