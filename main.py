@@ -7,7 +7,11 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.utils import to_categorical
 import time
 
 # Train and evaluate SVM
@@ -33,6 +37,31 @@ def train_evaluate_rf(X_train, y_train, X_val, y_val, n_estimators=100):
     y_pred = rf.predict(X_val)
     accuracy = accuracy_score(y_val, y_pred)
     return rf, accuracy, y_pred
+
+# Train and evaluate CNN
+def train_evaluate_cnn(X_train, y_train, X_val, y_val, input_shape, num_classes, epochs=10, batch_size=32):
+    model = Sequential([
+        Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
+        MaxPooling2D((2, 2)),
+        Conv2D(64, (3, 3), activation='relu'),
+        MaxPooling2D((2, 2)),
+        Conv2D(64, (3, 3), activation='relu'),
+        Flatten(),
+        Dense(64, activation='relu'),
+        Dropout(0.5),
+        Dense(num_classes, activation='softmax')
+    ])
+    
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size,
+                        validation_data=(X_val, y_val), verbose=1)
+    
+    _, accuracy = model.evaluate(X_val, y_val, verbose=0)
+    y_pred = model.predict(X_val)
+    y_pred_classes = np.argmax(y_pred, axis=1)
+    
+    return model, accuracy, y_pred_classes
 
 # Extract LBP features from images
 def extract_lbp_features(image, P=16, R=2):
@@ -79,7 +108,7 @@ def load_images(data_dir, image_size=256):
     except Exception as e:
         print(f"Error loading images from {data_dir}: {e}")
     print(f"Loaded {len(images)} images and {len(labels)} labels.\n")
-    return images, labels
+    return np.array(images), np.array(labels)
 
 def extract_features(images, part_name):
     lbp_features = []
@@ -103,7 +132,6 @@ def normalize_features(features, part_name):
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(features)
     print(f"Feature normalization for {part_name} completed.\n")
-
     return scaled_features
 
 # Main execution
@@ -116,38 +144,54 @@ if __name__ == "__main__":
     X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
     print("Dataset split into training, validation, and test sets.\n")
 
-    # Extract and normalize features
+    # Extract and normalize features for traditional ML models
     X_train_lbp_features, train_lbp_time = extract_features(X_train, "training")
     X_val_lbp_features, val_lbp_time = extract_features(X_val, "validation")
     X_test_lbp_features, test_lbp_time = extract_features(X_test, "test")
 
-    print("A sample of a lbp feature ", X_train_lbp_features[0])
-
-    # Normalize features
     X_train_lbp_features = normalize_features(X_train_lbp_features, "training")
     X_val_lbp_features = normalize_features(X_val_lbp_features, "validation")
     X_test_lbp_features = normalize_features(X_test_lbp_features, "test")
 
-    print("A sample of a normalized lbp feature ", X_train_lbp_features[0])
+    # Prepare data for CNN
+    X_train_cnn = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1) / 255.0
+    X_val_cnn = X_val.reshape(X_val.shape[0], X_val.shape[1], X_val.shape[2], 1) / 255.0
+    X_test_cnn = X_test.reshape(X_test.shape[0], X_test.shape[1], X_test.shape[2], 1) / 255.0
+
+    # Encode labels
+    le = LabelEncoder()
+    y_train_encoded = le.fit_transform(y_train)
+    y_val_encoded = le.transform(y_val)
+    y_test_encoded = le.transform(y_test)
+
+    # Convert to categorical for CNN
+    y_train_categorical = to_categorical(y_train_encoded)
+    y_val_categorical = to_categorical(y_val_encoded)
+    y_test_categorical = to_categorical(y_test_encoded)
 
     # Train and evaluate models
     models = {
-        "SVM": train_evaluate_svm,
-        "KNN": train_evaluate_knn,
-        "Random Forest": train_evaluate_rf
+        "SVM": (train_evaluate_svm, (X_train_lbp_features, y_train_encoded, X_val_lbp_features, y_val_encoded)),
+        "KNN": (train_evaluate_knn, (X_train_lbp_features, y_train_encoded, X_val_lbp_features, y_val_encoded)),
+        "Random Forest": (train_evaluate_rf, (X_train_lbp_features, y_train_encoded, X_val_lbp_features, y_val_encoded)),
+        "CNN": (train_evaluate_cnn, (X_train_cnn, y_train_categorical, X_val_cnn, y_val_categorical, X_train_cnn.shape[1:], len(np.unique(y_train))))
     }
 
     results = {}
 
-    for model_name, train_evaluate_func in models.items():
+    for model_name, (train_evaluate_func, args) in models.items():
         print(f"\nTraining {model_name} model...")
-        model, val_accuracy, val_predictions = train_evaluate_func(X_train_lbp_features, y_train, X_val_lbp_features, y_val)
-        print(f'LBP Features {model_name} Validation Accuracy: {val_accuracy:.4f}')
+        model, val_accuracy, val_predictions = train_evaluate_func(*args)
+        print(f'{model_name} Validation Accuracy: {val_accuracy:.4f}')
 
         # Evaluate on test set
-        test_predictions = model.predict(X_test_lbp_features)
-        test_accuracy = accuracy_score(y_test, test_predictions)
-        print(f'LBP Features {model_name} Test Accuracy: {test_accuracy:.4f}')
+        if model_name == "CNN":
+            test_predictions = np.argmax(model.predict(X_test_cnn), axis=1)
+            test_accuracy = accuracy_score(y_test_encoded, test_predictions)
+        else:
+            test_predictions = model.predict(X_test_lbp_features)
+            test_accuracy = accuracy_score(y_test_encoded, test_predictions)
+        print(f'{model_name} Test Accuracy: {test_accuracy:.4f}')
 
         results[model_name] = {
             "model": model,
@@ -164,14 +208,14 @@ if __name__ == "__main__":
         print(f"Test Accuracy: {result['test_accuracy']:.4f}")
         
         print("\nClassification Report for Validation Set:")
-        print(classification_report(y_val, result['val_predictions']))
+        print(classification_report(y_val_encoded, result['val_predictions']))
         print("Confusion Matrix for Validation Set:")
-        print(confusion_matrix(y_val, result['val_predictions']))
+        print(confusion_matrix(y_val_encoded, result['val_predictions']))
         
         print("\nClassification Report for Test Set:")
-        print(classification_report(y_test, result['test_predictions']))
+        print(classification_report(y_test_encoded, result['test_predictions']))
         print("Confusion Matrix for Test Set:")
-        print(confusion_matrix(y_test, result['test_predictions']))
+        print(confusion_matrix(y_test_encoded, result['test_predictions']))
 
     # Print timing information
     print("\nTime taken for LBP feature extraction:")
