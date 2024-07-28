@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 import time
 
 # Function to train and evaluate SVM
-def train_evaluate_svm(X_train, y_train, X_val, y_val, kernel='linear', C=1.0):
+def train_evaluate_svm(X_train, y_train, X_val, y_val, kernel='rbf', C=10.0):
     clf = SVC(kernel=kernel, C=C, random_state=42)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
@@ -101,7 +101,7 @@ def normalize_features(features):
 # Main execution
 if __name__ == "__main__":
     # Directory containing image data
-    data_dir = './Alldata'
+    data_dir = './DataToWorkWith'
     images, labels = load_images(data_dir)
 
     # Split dataset
