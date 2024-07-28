@@ -119,7 +119,7 @@ def extract_glrlm_features_M(image):
 # Load and preprocess dataset
 print("Starting dataset loading...")
 start_time = time.time()
-data_dir = './AllData'
+data_dir = './DataToWorkWith'
 images, labels = load_images(data_dir)
 end_time = time.time()
 print(f"Total dataset loading time: {end_time - start_time:.4f} seconds")
