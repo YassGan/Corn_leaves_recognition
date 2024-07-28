@@ -5,6 +5,7 @@ from skimage.feature import local_binary_pattern
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.preprocessing import StandardScaler
 import time
@@ -24,6 +25,14 @@ def train_evaluate_knn(X_train, y_train, X_val, y_val, n_neighbors=5):
     y_pred = knn.predict(X_val)
     accuracy = accuracy_score(y_val, y_pred)
     return knn, accuracy, y_pred
+
+# Train and evaluate Random Forest
+def train_evaluate_rf(X_train, y_train, X_val, y_val, n_estimators=100):
+    rf = RandomForestClassifier(n_estimators=n_estimators, random_state=42)
+    rf.fit(X_train, y_train)
+    y_pred = rf.predict(X_val)
+    accuracy = accuracy_score(y_val, y_pred)
+    return rf, accuracy, y_pred
 
 # Extract LBP features from images
 def extract_lbp_features(image, P=16, R=2):
@@ -121,45 +130,48 @@ if __name__ == "__main__":
 
     print("A sample of a normalized lbp feature ", X_train_lbp_features[0])
 
-    print("Training SVM model...")
-    # Train and evaluate SVM on LBP features
-    svm_lbp_model, lbp_accuracy, val_predictions_svm = train_evaluate_svm(X_train_lbp_features, y_train, X_val_lbp_features, y_val)
-    print(f'LBP Features SVM Accuracy: {lbp_accuracy:.4f}\n')
+    # Train and evaluate models
+    models = {
+        "SVM": train_evaluate_svm,
+        "KNN": train_evaluate_knn,
+        "Random Forest": train_evaluate_rf
+    }
 
-    print("Training KNN model...")
-    # Train and evaluate KNN on LBP features
-    knn_lbp_model, knn_accuracy, val_predictions_knn = train_evaluate_knn(X_train_lbp_features, y_train, X_val_lbp_features, y_val)
-    print(f'LBP Features KNN Accuracy: {knn_accuracy:.4f}\n')
+    results = {}
 
-    print("Evaluating models on test set...")
-    # Evaluate both models on test set
-    y_test_pred_svm = svm_lbp_model.predict(X_test_lbp_features)
-    y_test_pred_knn = knn_lbp_model.predict(X_test_lbp_features)
-    test_accuracy_svm = accuracy_score(y_test, y_test_pred_svm)
-    test_accuracy_knn = accuracy_score(y_test, y_test_pred_knn)
-    print(f'Test Accuracy with LBP Features (SVM): {test_accuracy_svm:.4f}')
-    print(f'Test Accuracy with LBP Features (KNN): {test_accuracy_knn:.4f}\n')
+    for model_name, train_evaluate_func in models.items():
+        print(f"\nTraining {model_name} model...")
+        model, val_accuracy, val_predictions = train_evaluate_func(X_train_lbp_features, y_train, X_val_lbp_features, y_val)
+        print(f'LBP Features {model_name} Validation Accuracy: {val_accuracy:.4f}')
 
-    # Generate and print classification reports and confusion matrices
-    print("Classification Report for Validation Set (SVM):")
-    print(classification_report(y_val, val_predictions_svm))
-    print("Confusion Matrix for Validation Set (SVM):")
-    print(confusion_matrix(y_val, val_predictions_svm))
+        # Evaluate on test set
+        test_predictions = model.predict(X_test_lbp_features)
+        test_accuracy = accuracy_score(y_test, test_predictions)
+        print(f'LBP Features {model_name} Test Accuracy: {test_accuracy:.4f}')
 
-    print("\nClassification Report for Validation Set (KNN):")
-    print(classification_report(y_val, val_predictions_knn))
-    print("Confusion Matrix for Validation Set (KNN):")
-    print(confusion_matrix(y_val, val_predictions_knn))
+        results[model_name] = {
+            "model": model,
+            "val_predictions": val_predictions,
+            "test_predictions": test_predictions,
+            "val_accuracy": val_accuracy,
+            "test_accuracy": test_accuracy
+        }
 
-    print("\nClassification Report for Test Set (SVM):")
-    print(classification_report(y_test, y_test_pred_svm))
-    print("Confusion Matrix for Test Set (SVM):")
-    print(confusion_matrix(y_test, y_test_pred_svm))
-
-    print("\nClassification Report for Test Set (KNN):")
-    print(classification_report(y_test, y_test_pred_knn))
-    print("Confusion Matrix for Test Set (KNN):")
-    print(confusion_matrix(y_test, y_test_pred_knn))
+    # Print detailed results
+    for model_name, result in results.items():
+        print(f"\n--- {model_name} Results ---")
+        print(f"Validation Accuracy: {result['val_accuracy']:.4f}")
+        print(f"Test Accuracy: {result['test_accuracy']:.4f}")
+        
+        print("\nClassification Report for Validation Set:")
+        print(classification_report(y_val, result['val_predictions']))
+        print("Confusion Matrix for Validation Set:")
+        print(confusion_matrix(y_val, result['val_predictions']))
+        
+        print("\nClassification Report for Test Set:")
+        print(classification_report(y_test, result['test_predictions']))
+        print("Confusion Matrix for Test Set:")
+        print(confusion_matrix(y_test, result['test_predictions']))
 
     # Print timing information
     print("\nTime taken for LBP feature extraction:")
