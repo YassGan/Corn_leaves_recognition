@@ -125,7 +125,7 @@ print(f'Test Accuracy with LBP Features: {test_accuracy:.4f}\n')
 print("Classification Report for Validation Set:")
 print(classification_report(y_val, val_predictions))
 
-print("Confusion Matrix for Validation Set:")
+print("Confusion Matrix for Validation Set :")
 print(confusion_matrix(y_val, val_predictions))
 
 print("Classification Report for Test Set:")
