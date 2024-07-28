@@ -10,14 +10,14 @@ import time
 
 # Train and evaluate SVM
 def train_evaluate_svm(X_train, y_train, X_val, y_val):
-    clf = SVC(kernel='linear', random_state=42)  # Linear kernel SVM
+    clf = SVC(kernel='rbf', C=10)  # Linear kernel SVM
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     accuracy = accuracy_score(y_val, y_pred)
     return clf, accuracy
 
 # Extract LBP features from images
-def extract_lbp_features(image, P=8, R=1):
+def extract_lbp_features(image, P=16, R=2):
     lbp = local_binary_pattern(image, P, R, method='uniform')
     n_bins = P + 2
     (hist, _) = np.histogram(lbp.ravel(), bins=np.arange(0, n_bins + 1), range=(0, n_bins))
