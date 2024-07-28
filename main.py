@@ -123,52 +123,84 @@ def get_run_lengths_V(line, max_gray):
     return run_lengths
 
 
-
 def extract_glrlm_features_M(image):
-    max_gray = 256
-    all_run_lengths = []
-
-    for direction in [0, 1, 2, 3]:  # Horizontal, Vertical, Diagonal, Anti-diagonal
-        if direction == 0:
+    # Ensure image is of type uint8
+    image = image.astype(np.uint8)
+    
+    # Calculate max_gray safely
+    max_gray = int(np.max(image)) + 1
+    max_run = np.max(image.shape)
+    
+    # Initialize GLRLM with a minimum size of 1 for each dimension
+    glrlm = np.zeros((max(max_gray, 1), max(max_run, 1), 4), dtype=int)
+    
+    # Calculate GLRLM for 0, 45, 90, 135 degrees
+    for angle in range(4):
+        if angle == 0:
             for row in image:
-                run_lengths = get_run_lengths_M(row, max_gray)
-                all_run_lengths.append(run_lengths)
-        elif direction == 1:
+                run_length = 1
+                for i in range(1, len(row)):
+                    if row[i] == row[i-1]:
+                        run_length += 1
+                    else:
+                        glrlm[row[i-1], run_length-1, angle] += 1
+                        run_length = 1
+                glrlm[row[-1], run_length-1, angle] += 1
+        elif angle == 1:
             for col in image.T:
-                run_lengths = get_run_lengths_M(col, max_gray)
-                all_run_lengths.append(run_lengths)
-        elif direction == 2:
-            for offset in range(-image.shape[0] + 1, image.shape[1]):
-                diag = image.diagonal(offset)
-                run_lengths = get_run_lengths_M(diag, max_gray)
-                all_run_lengths.append(run_lengths)
-        elif direction == 3:
-            for offset in range(-image.shape[0] + 1, image.shape[1]):
-                anti_diag = np.fliplr(image).diagonal(offset)
-                run_lengths = get_run_lengths_M(anti_diag, max_gray)
-                all_run_lengths.append(run_lengths)
+                run_length = 1
+                for i in range(1, len(col)):
+                    if col[i] == col[i-1]:
+                        run_length += 1
+                    else:
+                        glrlm[col[i-1], run_length-1, angle] += 1
+                        run_length = 1
+                glrlm[col[-1], run_length-1, angle] += 1
+        elif angle == 2:
+            for diag in [image.diagonal(i) for i in range(-image.shape[0]+1, image.shape[1])]:
+                run_length = 1
+                for i in range(1, len(diag)):
+                    if diag[i] == diag[i-1]:
+                        run_length += 1
+                    else:
+                        glrlm[diag[i-1], run_length-1, angle] += 1
+                        run_length = 1
+                glrlm[diag[-1], run_length-1, angle] += 1
+        else:
+            flipped = np.fliplr(image)
+            for diag in [flipped.diagonal(i) for i in range(-flipped.shape[0]+1, flipped.shape[1])]:
+                run_length = 1
+                for i in range(1, len(diag)):
+                    if diag[i] == diag[i-1]:
+                        run_length += 1
+                    else:
+                        glrlm[diag[i-1], run_length-1, angle] += 1
+                        run_length = 1
+                glrlm[diag[-1], run_length-1, angle] += 1
+    
+    # Normalize GLRLM
+    glrlm_sum = np.sum(glrlm)
+    if glrlm_sum == 0:
+        return np.zeros(11)  # Return zero features if GLRLM is empty
+    p = glrlm / glrlm_sum
 
-    # Calculate statistical features from run-lengths
-    flat_run_lengths = np.concatenate(all_run_lengths)
-    total_pixels = image.size
+    # Calculate features
+    g_indices = np.arange(max_gray)[:, np.newaxis, np.newaxis]
+    r_indices = np.arange(max_run)[np.newaxis, :, np.newaxis]
+    
+    sre = np.sum(p / (r_indices**2 + 1e-6))
+    lre = np.sum(p * r_indices**2)
+    gln = np.sum(np.sum(p, axis=1)**2)
+    rln = np.sum(np.sum(p, axis=0)**2)
+    rp = np.sum(p)
+    lgre = np.sum(p / (g_indices**2 + 1e-6))
+    hgre = np.sum(p * g_indices**2)
+    srlge = np.sum(p / ((r_indices**2 + 1e-6) * (g_indices**2 + 1e-6)))
+    srhge = np.sum(p * g_indices**2 / (r_indices**2 + 1e-6))
+    lrlge = np.sum(p * r_indices**2 / (g_indices**2 + 1e-6))
+    lrhge = np.sum(p * r_indices**2 * g_indices**2)
 
-    # Short Run Emphasis (SRE)
-    SRE = np.sum((flat_run_lengths / total_pixels) ** 2)
-
-    # Long Run Emphasis (LRE)
-    LRE = np.sum(flat_run_lengths ** 2) / total_pixels
-
-    # Gray Level Non-Uniformity (GLN)
-    GLN = np.sum(np.sum(np.array(all_run_lengths), axis=0) ** 2) / (total_pixels ** 2)
-
-    # Run Length Non-Uniformity (RLN)
-    RLN = np.sum(np.sum(np.array(all_run_lengths), axis=1) ** 2) / (total_pixels ** 2)
-
-    # Run Percentage (RP)
-    RP = np.sum(flat_run_lengths) / total_pixels
-
-    # Return as numpy array
-    return np.array([SRE, LRE, GLN, RLN, RP])
+    return np.array([sre, lre, gln, rln, rp, lgre, hgre, srlge, srhge, lrlge, lrhge])
 
 
 
