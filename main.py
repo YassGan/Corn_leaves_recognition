@@ -4,13 +4,13 @@ import numpy as np
 from skimage.feature import graycomatrix, graycoprops
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import StandardScaler
 import time
 
 # Train and evaluate SVM
 def train_evaluate_svm(X_train, y_train, X_val, y_val):
-    clf = SVC(kernel='linear', random_state=42)  # Linear kernel SVM
+    clf = SVC(kernel='rbf', C=100,random_state=42)  # Linear kernel SVM
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     accuracy = accuracy_score(y_val, y_pred)
@@ -65,7 +65,7 @@ def load_images(data_dir, image_size=256):
     print(f"Loaded {len(images)} images and {len(labels)} labels.\n")
     return images, labels
 
-data_dir = './Alldata'
+data_dir = './DataToWorkWith'
 images, labels = load_images(data_dir)
 
 print("Splitting dataset...")
@@ -124,3 +124,8 @@ print(f'Test Accuracy with GLCM Features: {test_accuracy:.4f}\n')
 print("Time taken for feature extraction on training set:", train_time)
 print("Time taken for feature extraction on validation set:", val_time)
 print("Time taken for feature extraction on test set:", test_time)
+
+
+# Print the classification report for the test set
+print("Classification Report for Test Set:")
+print(classification_report(y_test, y_test_pred, target_names=np.unique(labels)))
