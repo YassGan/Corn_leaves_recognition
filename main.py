@@ -4,11 +4,9 @@ import numpy as np
 from skimage.feature import local_binary_pattern
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.preprocessing import StandardScaler
 import time
-import matplotlib.pyplot as plt
-import pickle  # Import pickle for saving/loading the model
 
 # Train and evaluate SVM
 def train_evaluate_svm(X_train, y_train, X_val, y_val):
@@ -16,7 +14,7 @@ def train_evaluate_svm(X_train, y_train, X_val, y_val):
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     accuracy = accuracy_score(y_val, y_pred)
-    return clf, accuracy
+    return clf, accuracy, y_pred
 
 # Extract LBP features from images
 def extract_lbp_features(image, P=16, R=2):
@@ -65,7 +63,7 @@ def load_images(data_dir, image_size=256):
     print(f"Loaded {len(images)} images and {len(labels)} labels.\n")
     return images, labels
 
-data_dir = './Alldata'
+data_dir = './DataToWorkWith'
 images, labels = load_images(data_dir)
 
 print("Splitting dataset...")
@@ -114,7 +112,7 @@ print("A sample of a normalized lbp feature ", X_train_lbp_features[0])
 
 print("Training SVM model...")
 # Train and evaluate SVM on LBP features
-svm_lbp_model, lbp_accuracy = train_evaluate_svm(X_train_lbp_features, y_train, X_val_lbp_features, y_val)
+svm_lbp_model, lbp_accuracy, val_predictions = train_evaluate_svm(X_train_lbp_features, y_train, X_val_lbp_features, y_val)
 print(f'LBP Features SVM Accuracy: {lbp_accuracy:.4f}\n')
 
 print("Evaluating model on test set...")
@@ -123,13 +121,20 @@ y_test_pred = svm_lbp_model.predict(X_test_lbp_features)
 test_accuracy = accuracy_score(y_test, y_test_pred)
 print(f'Test Accuracy with LBP Features: {test_accuracy:.4f}\n')
 
+# Generate and print classification report and confusion matrix
+print("Classification Report for Validation Set:")
+print(classification_report(y_val, val_predictions))
+
+print("Confusion Matrix for Validation Set:")
+print(confusion_matrix(y_val, val_predictions))
+
+print("Classification Report for Test Set:")
+print(classification_report(y_test, y_test_pred))
+
+print("Confusion Matrix for Test Set:")
+print(confusion_matrix(y_test, y_test_pred))
+
 # Print timing information
 print("Time taken for LBP feature extraction on training set:", train_lbp_time)
 print("Time taken for LBP feature extraction on validation set:", val_lbp_time)
 print("Time taken for LBP feature extraction on test set:", test_lbp_time)
-
-# Save the model using pickle
-model_filename = 'svm_lbp_model.pkl'
-with open(model_filename, 'wb') as file:
-    pickle.dump(svm_lbp_model, file)
-print(f"Model saved to {model_filename}")
