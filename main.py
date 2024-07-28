@@ -4,7 +4,7 @@ import numpy as np
 from skimage.feature import hog
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import StandardScaler
 import time
 
@@ -65,7 +65,7 @@ def load_images(data_dir, image_size=256):
     print(f"Time taken to load images: {load_end_time - load_start_time:.2f} seconds\n")
     return images, labels
 
-data_dir = './Alldata'
+data_dir = './DataToWorkWith'
 images, labels = load_images(data_dir)
 
 print("Splitting dataset...")
@@ -126,12 +126,31 @@ y_test_pred = svm_hog_model.predict(X_test_hog_features)
 test_accuracy = accuracy_score(y_test, y_test_pred)
 eval_end_time = time.time()  # End timing SVM evaluation
 print(f'Test Accuracy with HOG Features: {test_accuracy:.4f}\n')
+
+
+
+
+
+
+# Print the classification report for the test set
+print("Classification Report for Test Set:")
+print(classification_report(y_test, y_test_pred, target_names=np.unique(labels)))
+
+
+
+
+
 print(f"Time taken for model evaluation: {eval_end_time - eval_start_time:.2f} seconds\n")
 
 # Print timing information
 print("Time taken for HOG feature extraction on training set:", train_hog_time)
 print("Time taken for HOG feature extraction on validation set:", val_hog_time)
 print("Time taken for HOG feature extraction on test set:", test_hog_time)
+
+
+
+
+
 
 # Record the end time of the program
 end_time = time.time()
