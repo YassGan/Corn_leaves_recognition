@@ -2,8 +2,6 @@ import cv2
 import numpy as np
 from skimage.feature import local_binary_pattern
 import pickle
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
@@ -45,13 +43,13 @@ def predict_image_class(image_path, model_filename, scaler_filename):
     # Use the loaded model to predict the class
     predicted_class = loaded_model.predict(scaled_features)
 
-    return predicted_class[0], image, new_image
+    return predicted_class[0], image
 
 class ImageClassifierApp:
     def __init__(self, master):
         self.master = master
         self.master.title("Image Classifier")
-        self.master.geometry("800x600")
+        self.master.geometry("600x400")
 
         self.model_filename = 'svm_lbp_model_Balanced_Data_29.pkl'
         self.scaler_filename = 'scaler_Balanced_Data_29.pkl'
@@ -67,6 +65,10 @@ class ImageClassifierApp:
         self.open_button = tk.Button(self.button_frame, text="Open Image", command=self.open_image)
         self.open_button.pack(side=tk.LEFT, padx=5)
 
+        # Image display
+        self.image_label = tk.Label(self.master)
+        self.image_label.pack(expand=True, fill=tk.BOTH)
+
         # Prediction result
         self.result_label = tk.Label(self.master, text="", font=("Arial", 14))
         self.result_label.pack(pady=10)
@@ -78,30 +80,20 @@ class ImageClassifierApp:
         )
         if file_path:
             self.image_path = file_path
+            self.display_image(file_path)
             self.predict()
 
-    def display_images(self, original_image, resized_image):
-        # Convert images from BGR (OpenCV) to RGB (Matplotlib)
-        original_image_rgb = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
-        resized_image_rgb = cv2.cvtColor(resized_image, cv2.COLOR_GRAY2RGB)
-
-        # Plot the images
-        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-        axs[0].imshow(original_image_rgb)
-        axs[0].set_title('Original Image')
-        axs[0].axis('off')
-
-        axs[1].imshow(resized_image_rgb)
-        axs[1].set_title('Resized Image')
-        axs[1].axis('off')
-
-        plt.show()
+    def display_image(self, image_path):
+        image = Image.open(image_path)
+        image.thumbnail((400, 300))  # Resize image to fit in the window
+        photo = ImageTk.PhotoImage(image)
+        self.image_label.config(image=photo)
+        self.image_label.image = photo  # Keep a reference
 
     def predict(self):
         try:
-            predicted_class, original_image, resized_image = predict_image_class(self.image_path, self.model_filename, self.scaler_filename)
+            predicted_class, _ = predict_image_class(self.image_path, self.model_filename, self.scaler_filename)
             self.result_label.config(text=f"Predicted class: {predicted_class}")
-            self.display_images(original_image, resized_image)
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred during prediction: {str(e)}")
 
